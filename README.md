@@ -800,6 +800,12 @@ cp .env.example .env
 | `FIREBLOCKS_BASE_PATH`                | No       | `https://api.fireblocks.io` | Fireblocks workspace URL - also controls webhook JWKS region   |
 | `IAGON_API_KEY`                       | Yes      | -                           | Iagon API key for blockchain data queries                      |
 | `CARDANO_NETWORK`                     | No       | `mainnet`                   | `mainnet` or `preprod`                                         |
+| `MAX_BODY_SIZE`                       | No       | `1mb`                       | Maximum request body size                                      |
+| `RATE_LIMIT_WINDOW_MS`                | No       | `900000`                    | Rate limit time window (ms)                                    |
+| `RATE_LIMIT_MAX_REQUESTS`             | No       | `100`                       | Max requests per rate limit window                             |
+| `CORS_ORIGINS`                        | No       | `*`                         | Allowed CORS origins (comma-separated)                         |
+| `API_KEY_ENABLED`                     | No       | `false`                     | Enable API key authentication                                  |
+| `API_KEY`                             | No       | -                           | API key value (required if `API_KEY_ENABLED=true`)             |
 
 **Fireblocks base path options:**
 
@@ -849,6 +855,101 @@ export FIREBLOCKS_API_USER_SECRET_KEY=$(cat key.b64)
 ```
 
 **Priority:** If both `FIREBLOCKS_API_USER_SECRET_KEY` and `FIREBLOCKS_API_USER_SECRET_KEY_PATH` are set, the direct key content takes precedence.
+
+### Security Configuration
+
+The API server includes configurable security middleware for CORS, rate limiting, and optional API key authentication. All settings are configured via environment variables.
+
+| Variable | Default | Description |
+|----------|---------|-------------|
+| `MAX_BODY_SIZE` | `1mb` | Maximum request body size (e.g., `1mb`, `500kb`) |
+| `RATE_LIMIT_WINDOW_MS` | `900000` | Rate limiting time window in milliseconds (default: 15 minutes) |
+| `RATE_LIMIT_MAX_REQUESTS` | `100` | Maximum requests allowed per window |
+| `CORS_ORIGINS` | `*` | Allowed CORS origins. Use `*` for all, or comma-separated list (e.g., `https://app.example.com,https://admin.example.com`) |
+| `API_KEY_ENABLED` | `false` | Enable API key authentication |
+| `API_KEY` | - | Required API key value when `API_KEY_ENABLED=true` |
+
+#### CORS Configuration
+
+```bash
+# Allow all origins (development)
+CORS_ORIGINS=*
+
+# Allow specific origins (production)
+CORS_ORIGINS=https://myapp.com,https://admin.myapp.com
+```
+
+#### Rate Limiting
+
+Rate limiting protects against abuse. The `/health` endpoint is exempt to support load balancer health checks.
+
+```bash
+# 100 requests per 15 minutes (default)
+RATE_LIMIT_WINDOW_MS=900000
+RATE_LIMIT_MAX_REQUESTS=100
+
+# Stricter: 50 requests per 5 minutes
+RATE_LIMIT_WINDOW_MS=300000
+RATE_LIMIT_MAX_REQUESTS=50
+```
+
+#### API Key Authentication
+
+When enabled, all requests (except `/health`, `/api-docs`, `/docs`) require the `X-API-Key` header.
+
+```bash
+# Enable API key authentication
+API_KEY_ENABLED=true
+API_KEY=your-secret-api-key-here
+```
+
+Client requests must include the header:
+
+```bash
+curl -H "X-API-Key: your-secret-api-key-here" http://localhost:8000/api/balance/123
+```
+
+### Protocol Parameters Configuration
+
+Cardano protocol parameters can be overridden at SDK initialization. This is useful when protocol parameters change at hard forks, allowing you to update without waiting for an SDK release.
+
+| Parameter | Default | Description |
+|-----------|---------|-------------|
+| `minFeeA` | `44` | Fee coefficient: lovelace per transaction byte |
+| `minFeeB` | `155381` | Fee constant: base lovelace fee |
+| `coinsPerUtxoByte` | `4310` | Lovelace per UTxO byte for min-ADA calculations |
+| `stakeKeyDeposit` | `2000000` | Stake key registration deposit (2 ADA) |
+| `drepDeposit` | `500000000` | DRep registration deposit (500 ADA) |
+
+#### SDK Usage
+
+```typescript
+const sdk = await FireblocksCardanoRawSDK.createInstance({
+  fireblocksConfig: { apiKey, secretKey, basePath },
+  vaultAccountId: "123",
+  network: Networks.MAINNET,
+  iagonApiKey: "...",
+  // Override protocol parameters (optional)
+  protocolParams: {
+    minFeeA: 44,
+    minFeeB: 155381,
+    coinsPerUtxoByte: 4310,
+    stakeKeyDeposit: 2_000_000,
+    drepDeposit: 500_000_000,
+  }
+});
+```
+
+You only need to specify parameters that have changed - unspecified parameters keep their defaults.
+
+```typescript
+// Only override fee parameters after a hard fork
+protocolParams: {
+  minFeeA: 45,  // New value
+  minFeeB: 160000,  // New value
+  // coinsPerUtxoByte, stakeKeyDeposit, drepDeposit keep defaults
+}
+```
 
 ## API Documentation
 
