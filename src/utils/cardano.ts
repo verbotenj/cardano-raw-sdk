@@ -28,6 +28,7 @@ import {
   fetchAndSelectUtxosForAdaParams,
   fetchAndSelectUtxosForMultiTokenParams,
   SupportedAssets,
+  SdkApiError,
 } from "../types/index.js";
 import { Logger } from "./logger.js";
 import { CardanoAmounts, CardanoConstants } from "../constants.js";
@@ -252,37 +253,52 @@ export const fetchUtxos = async (
   iagonApiService: IagonApiService,
   address: string
 ): Promise<UtxoData[]> => {
+  logger.info(`Fetching UTXOs for address: ${address}`);
+
+  let response;
   try {
-    logger.info(`Fetching UTXOs for address: ${address}`);
-    const response = await iagonApiService.getUtxosByAddress(address);
-
-    logger.info(`API Response:`, JSON.stringify(response, null, 2));
-
-    if (response.success) {
-      const utxos = response.data;
-
-      if (!utxos || utxos.length === 0) {
-        logger.warn(`No UTXOs found for address: ${address}`);
-        return [];
-      }
-
-      logger.info(`Found ${utxos.length} UTXOs`);
-      if (utxos.length > 0) {
-        logger.info(`Sample UTXO assets:`, JSON.stringify(utxos[0].value.assets, null, 2));
-      }
-
-      return utxos;
-    } else {
-      logger.warn(`API returned success=false for address: ${address}`);
-      return [];
-    }
+    response = await iagonApiService.getUtxosByAddress(address);
   } catch (error: unknown) {
-    logger.error(
-      `Error fetching UTXOs for ${address}: ${error instanceof Error ? error.message : String(error)}`,
-      error instanceof Error ? error.stack : undefined
+    // Propagate network/API errors instead of swallowing them
+    const message = error instanceof Error ? error.message : String(error);
+    logger.error(`Error fetching UTXOs for ${address}: ${message}`);
+    throw new SdkApiError(
+      `Failed to fetch UTXOs for address ${address}: ${message}`,
+      500,
+      "UTXO_FETCH_ERROR",
+      { address },
+      "iagon-api"
     );
+  }
+
+  logger.info(`API Response:`, JSON.stringify(response, null, 2));
+
+  // Propagate API errors instead of returning empty array
+  if (!response.success) {
+    logger.error(`API returned success=false for address: ${address}`);
+    throw new SdkApiError(
+      `Failed to fetch UTXOs for address ${address}: API returned unsuccessful response`,
+      500,
+      "UTXO_FETCH_ERROR",
+      { address },
+      "iagon-api"
+    );
+  }
+
+  const utxos = response.data;
+
+  // Empty result is valid (address has no UTXOs) - return empty array
+  if (!utxos || utxos.length === 0) {
+    logger.warn(`No UTXOs found for address: ${address}`);
     return [];
   }
+
+  logger.info(`Found ${utxos.length} UTXOs`);
+  if (utxos.length > 0) {
+    logger.info(`Sample UTXO assets:`, JSON.stringify(utxos[0].value.assets, null, 2));
+  }
+
+  return utxos;
 };
 
 export const calculateTokenAmount = (
