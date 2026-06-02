@@ -1,6 +1,27 @@
 import { z } from "zod";
 import { Request, Response, NextFunction } from "express";
 
+import { CardanoConstants } from "../constants.js";
+
+/**
+ * Fee validation bounds.
+ * MIN_PROTOCOL_FEE: Minimum fee per Cardano protocol (minFeeB constant)
+ * MAX_REASONABLE_FEE: Upper bound to prevent accidental loss-of-funds (10 ADA)
+ */
+const MIN_PROTOCOL_FEE = CardanoConstants.MIN_FEE_B; // 155,381 lovelace
+const MAX_REASONABLE_FEE = 10_000_000; // 10 ADA - covers even complex multi-asset tx
+
+/**
+ * Reusable schema for optional fee parameter with bounds validation.
+ * Prevents loss-of-funds from excessive fees while ensuring minimum protocol requirements.
+ */
+const optionalFeeSchema = z
+  .number()
+  .int("fee must be an integer")
+  .min(MIN_PROTOCOL_FEE, `fee must be at least ${MIN_PROTOCOL_FEE} lovelace (Cardano minimum)`)
+  .max(MAX_REASONABLE_FEE, `fee cannot exceed ${MAX_REASONABLE_FEE} lovelace (10 ADA)`)
+  .optional();
+
 /**
  * Generic validation middleware that validates request body against a Zod schema
  * @param schema - Zod schema to validate against
@@ -314,7 +335,7 @@ export const delegateToDRepRequestSchema = z
         "drepId must be bech32 (drep1... or drep_script1...) or a 56-character hex string"
       )
       .optional(),
-    fee: z.number().int().positive().optional(),
+    fee: optionalFeeSchema,
   })
   .refine((data) => data.drepAction !== "custom-drep" || !!data.drepId, {
     message: "drepId is required when drepAction is custom-drep",
@@ -339,7 +360,7 @@ export const registerAsDRepRequestSchema = z.object({
     })
     .optional(),
   depositAmount: z.number().int().positive().optional(),
-  fee: z.number().int().positive().optional(),
+  fee: optionalFeeSchema,
 });
 
 export type RegisterAsDRepRequest = z.infer<typeof registerAsDRepRequestSchema>;
@@ -367,7 +388,7 @@ export const castVoteRequestSchema = z.object({
   }),
   vote: z.enum(["yes", "no", "abstain"], { message: 'vote must be "yes", "no", or "abstain"' }),
   anchor: anchorSchema.optional(),
-  fee: z.number().int().positive().optional(),
+  fee: optionalFeeSchema,
 });
 
 export type CastVoteRequest = z.infer<typeof castVoteRequestSchema>;
