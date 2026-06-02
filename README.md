@@ -1420,6 +1420,33 @@ await sdk.shutdown(); // Clean up resources and clear cache
    - Verify all required environment variables are set
    - Check Docker logs: `docker-compose logs -f`
 
+## Deployment Considerations
+
+### UTXO Locking Limitation
+
+The SDK uses **in-memory UTXO locking** to prevent double-spend within a single process. When a UTXO is selected for a transaction, it is temporarily locked (default: 2 minutes) to prevent concurrent transactions from selecting the same UTXO.
+
+**Important for multi-replica deployments:**
+
+This in-memory lock only works within a single Node.js process. If you run multiple replicas/instances of the API service (e.g., in Kubernetes, Docker Swarm, or behind a load balancer), concurrent requests to different replicas may select the same UTXO, causing one transaction to fail.
+
+**Mitigation strategies:**
+
+1. **Sticky Sessions**: Route requests for the same vault account to the same replica using session affinity (e.g., based on `vaultAccountId`)
+
+2. **External Locking**: Implement distributed locking using Redis, a database, or another external coordination service
+
+3. **Single Replica**: For low-traffic deployments, run a single replica to ensure in-memory locks are effective
+
+4. **Sequential Processing**: Queue transactions for the same vault account to process them sequentially
+
+```typescript
+// Example: The SDK locks UTXOs automatically
+const result1 = await sdk.transferAda({ ... }); // UTXO locked during tx
+const result2 = await sdk.transferAda({ ... }); // Different UTXO selected
+// Locks automatically release after transaction completes or TTL expires
+```
+
 ## Security Considerations
 
 - ⚠️ Never commit `.env` files or secret keys to version control
