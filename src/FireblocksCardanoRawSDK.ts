@@ -28,6 +28,7 @@ import {
   parseAdaStringToLovelace,
   getStakeAddressFromBaseAddress,
   utxoLocks,
+  setProtocolParams,
 } from "./utils/index.js";
 
 import {
@@ -168,6 +169,18 @@ export class FireblocksCardanoRawSDK {
     assetCacheTTL?: number;
     /** Disable SSL certificate verification (use only in development) */
     disableSslVerification?: boolean;
+    /**
+     * Override Cardano protocol parameters.
+     * Use this to adapt to protocol changes without waiting for an SDK update.
+     * Only specified fields will be overridden; others use defaults.
+     */
+    protocolParams?: {
+      minFeeA?: number;
+      minFeeB?: number;
+      coinsPerUtxoByte?: number;
+      stakeKeyDeposit?: number;
+      drepDeposit?: number;
+    };
   }): Promise<FireblocksCardanoRawSDK> => {
     try {
       const logger = new Logger(`app:fireblocks-cardano-raw-sdk`);
@@ -179,7 +192,14 @@ export class FireblocksCardanoRawSDK {
         iagonApiKey,
         assetCacheTTL,
         disableSslVerification = false,
+        protocolParams,
       } = params;
+
+      // Apply custom protocol parameters if provided
+      if (protocolParams) {
+        setProtocolParams(protocolParams);
+        logger.info("Custom protocol parameters applied", protocolParams);
+      }
 
       if (network === Networks.PREVIEW) {
         throw new Error(`Unsupported network: ${network}`);

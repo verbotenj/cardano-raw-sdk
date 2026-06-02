@@ -1,25 +1,30 @@
 import { z } from "zod";
 import { Request, Response, NextFunction } from "express";
 
-import { CardanoConstants } from "../constants.js";
+import { getProtocolParams } from "../utils/protocolParams.js";
 
 /**
  * Fee validation bounds.
- * MIN_PROTOCOL_FEE: Minimum fee per Cardano protocol (minFeeB constant)
+ * MIN_PROTOCOL_FEE: Minimum fee per Cardano protocol (minFeeB constant, configurable)
  * MAX_REASONABLE_FEE: Upper bound to prevent accidental loss-of-funds (10 ADA)
  */
-const MIN_PROTOCOL_FEE = CardanoConstants.MIN_FEE_B; // 155,381 lovelace
+const getMinProtocolFee = () => getProtocolParams().minFeeB; // Default: 155,381 lovelace
 const MAX_REASONABLE_FEE = 10_000_000; // 10 ADA - covers even complex multi-asset tx
 
 /**
  * Reusable schema for optional fee parameter with bounds validation.
  * Prevents loss-of-funds from excessive fees while ensuring minimum protocol requirements.
+ * Note: Uses a function to get min fee to support configurable protocol params.
  */
 const optionalFeeSchema = z
   .number()
   .int("fee must be an integer")
-  .min(MIN_PROTOCOL_FEE, `fee must be at least ${MIN_PROTOCOL_FEE} lovelace (Cardano minimum)`)
-  .max(MAX_REASONABLE_FEE, `fee cannot exceed ${MAX_REASONABLE_FEE} lovelace (10 ADA)`)
+  .refine((fee) => fee >= getMinProtocolFee(), {
+    message: `fee must be at least the protocol minimum (minFeeB)`,
+  })
+  .refine((fee) => fee <= MAX_REASONABLE_FEE, {
+    message: `fee cannot exceed ${MAX_REASONABLE_FEE} lovelace (10 ADA)`,
+  })
   .optional();
 
 /**
