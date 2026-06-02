@@ -8,6 +8,7 @@ import {
   findSuitableUtxo,
   UtxoForStaking,
   formatWithDecimals,
+  utxoLocks,
 } from "../../../utils/index.js";
 import { SdkApiError } from "../../../types/index.js";
 import { FireblocksService, IagonApiService } from "../../index.js";
@@ -39,10 +40,14 @@ export class UtxoProvider implements IUtxoProvider {
       const utxo = await this.findUtxoForAddress(addressObj.address, minAmount);
 
       if (utxo) {
+        // Lock the UTXO to prevent double-spend in concurrent operations
+        const release = utxoLocks.lockOne(utxo.txHash, utxo.indexInTx);
+
         return {
           address: addressObj.address,
           addressIndex: addressObj.bip44AddressIndex ?? 0,
           utxo,
+          release,
         };
       }
 
@@ -81,7 +86,17 @@ export class UtxoProvider implements IUtxoProvider {
       return null;
     }
 
-    return findSuitableUtxo(utxosResponse.data, minAmount);
+    // Filter out already locked UTXOs to prevent double-spend
+    const availableUtxos = utxosResponse.data.filter(
+      (u) => !utxoLocks.isLocked(u.transaction_id, u.output_index)
+    );
+
+    if (availableUtxos.length === 0) {
+      this.logger.debug(`All UTXOs for ${address} are currently locked`);
+      return null;
+    }
+
+    return findSuitableUtxo(availableUtxos, minAmount);
   }
 
   private createInsufficientFundsError(vaultAccountId: string, minAmount: number): SdkApiError {

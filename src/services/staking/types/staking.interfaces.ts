@@ -65,6 +65,11 @@ export interface AddressInfo {
 
 export interface AddressWithUtxo extends AddressInfo {
   readonly utxo: UtxoForStaking;
+  /**
+   * Release the UTXO lock. Should be called in finally blocks after transaction completes.
+   * If not called, lock will auto-expire after UTXO_LOCK_TTL_MS.
+   */
+  readonly release: () => void;
 }
 
 export interface SigningContext {

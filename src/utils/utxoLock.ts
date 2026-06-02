@@ -41,6 +41,14 @@ class UtxoLockManager {
       for (const k of keys) this.locks.delete(k);
     };
   }
+
+  /**
+   * Lock a single UTxO by txHash and index.
+   * Convenience method for staking operations that select one UTXO at a time.
+   */
+  lockOne(txHash: string, index: number): () => void {
+    return this.lock([{ transaction_id: txHash, output_index: index }]);
+  }
 }
 
 export const utxoLocks = new UtxoLockManager();

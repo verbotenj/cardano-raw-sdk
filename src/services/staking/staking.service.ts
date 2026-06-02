@@ -148,6 +148,8 @@ export class StakingService {
 
     this.logger.info(`Registering staking credential for vault account ${vaultAccountId}`);
 
+    let addressWithUtxo: AddressWithUtxo | undefined;
+
     try {
       const existingRegistration = await this.validator.checkRegistrationStatus(vaultAccountId);
 
@@ -156,7 +158,7 @@ export class StakingService {
       }
 
       const minInputAmount = depositAmount + fee + CardanoConstants.MIN_UTXO_BASE_LOVELACE;
-      const addressWithUtxo = await this.utxoProvider.findAddressWithSuitableUtxo(
+      addressWithUtxo = await this.utxoProvider.findAddressWithSuitableUtxo(
         vaultAccountId,
         minInputAmount
       );
@@ -181,6 +183,8 @@ export class StakingService {
       };
     } catch (error: unknown) {
       throw this.errorHandler.handleApiError(error, "registering staking credential");
+    } finally {
+      addressWithUtxo?.release();
     }
   }
 
@@ -192,11 +196,13 @@ export class StakingService {
 
     this.logger.info(`Delegating to pool ${poolId} for vault account ${vaultAccountId}`);
 
+    let addressWithUtxo: AddressWithUtxo | undefined;
+
     try {
       await this.validator.validateDelegationPrerequisites(vaultAccountId, poolId);
 
       const minAmount = CardanoConstants.MIN_UTXO_BASE_LOVELACE + fee;
-      const addressWithUtxo = await this.utxoProvider.findAddressWithSuitableUtxo(
+      addressWithUtxo = await this.utxoProvider.findAddressWithSuitableUtxo(
         vaultAccountId,
         minAmount
       );
@@ -230,6 +236,8 @@ export class StakingService {
       };
     } catch (error: unknown) {
       throw this.errorHandler.handleApiError(error, "delegating to stake pool");
+    } finally {
+      addressWithUtxo?.release();
     }
   }
 
@@ -242,6 +250,8 @@ export class StakingService {
     const { vaultAccountId, fee = CardanoAmounts.STAKING_TX_FEE } = options;
 
     this.logger.info(`Deregistering staking credential for vault account ${vaultAccountId}`);
+
+    let addressWithUtxo: AddressWithUtxo | undefined;
 
     try {
       const isRegistered = await this.validator.checkRegistrationStatus(vaultAccountId);
@@ -256,7 +266,7 @@ export class StakingService {
       }
 
       const minInputAmount = CardanoConstants.MIN_UTXO_BASE_LOVELACE + fee;
-      const addressWithUtxo = await this.utxoProvider.findAddressWithSuitableUtxo(
+      addressWithUtxo = await this.utxoProvider.findAddressWithSuitableUtxo(
         vaultAccountId,
         minInputAmount
       );
@@ -270,6 +280,8 @@ export class StakingService {
       };
     } catch (error: unknown) {
       throw this.errorHandler.handleApiError(error, "deregistering staking credential");
+    } finally {
+      addressWithUtxo?.release();
     }
   }
 
@@ -279,6 +291,8 @@ export class StakingService {
   async withdrawRewards(
     options: WithdrawRewardsOptions
   ): Promise<StakingTransactionResult & { rewardAmount?: number }> {
+    let addressWithUtxo: AddressWithUtxo | undefined;
+
     try {
       const { vaultAccountId, limit, fee } = options;
 
@@ -288,7 +302,7 @@ export class StakingService {
       this.logger.info(`Withdrawing rewards for vault account ${vaultAccountId}`);
 
       const minInputAmount = CardanoConstants.MIN_UTXO_BASE_LOVELACE + fee;
-      const addressWithUtxo = await this.utxoProvider.findAddressWithSuitableUtxo(
+      addressWithUtxo = await this.utxoProvider.findAddressWithSuitableUtxo(
         vaultAccountId,
         minInputAmount
       );
@@ -318,12 +332,12 @@ export class StakingService {
 
       // Build a helper so we can retry with a corrected amount without repeating code
       const buildAndSubmitWithdrawal = async (amount: number) => {
-        const netAmount = addressWithUtxo.utxo.nativeAmount - fee + amount;
+        const netAmount = addressWithUtxo!.utxo.nativeAmount - fee + amount;
         const w = { ...withdrawal, reward: amount };
         const withdrawalsDict = serializeWithdrawals([w]);
         return this.buildSignAndSubmit({
           vaultAccountId,
-          addressInfo: addressWithUtxo,
+          addressInfo: addressWithUtxo!,
           netAmount,
           fee,
           withdrawals: withdrawalsDict,
@@ -374,6 +388,8 @@ export class StakingService {
       };
     } catch (error: unknown) {
       throw this.errorHandler.handleApiError(error, "withdrawing staking rewards");
+    } finally {
+      addressWithUtxo?.release();
     }
   }
 
@@ -381,6 +397,8 @@ export class StakingService {
    * Delegate voting power to a DRep (Conway era governance)
    */
   async delegateToDRep(options: DRepDelegationOptions): Promise<StakingTransactionResult> {
+    let addressWithUtxo: AddressWithUtxo | undefined;
+
     try {
       const {
         vaultAccountId,
@@ -395,7 +413,7 @@ export class StakingService {
       await this.validator.validateRegistrationStatus(vaultAccountId, true);
 
       const minInputAmount = fee * MIN_DREP_DELEGATION_AMOUNT_MULTIPLIER;
-      const addressWithUtxo = await this.utxoProvider.findAddressWithSuitableUtxo(
+      addressWithUtxo = await this.utxoProvider.findAddressWithSuitableUtxo(
         vaultAccountId,
         minInputAmount
       );
@@ -429,6 +447,8 @@ export class StakingService {
       };
     } catch (error: unknown) {
       throw this.errorHandler.handleApiError(error, "delegating to DRep");
+    } finally {
+      addressWithUtxo?.release();
     }
   }
 
@@ -436,6 +456,8 @@ export class StakingService {
    * Register the vault account as a DRep (Conway era governance)
    */
   async registerAsDRep(options: RegisterAsDRepOptions): Promise<RegisterAsDRepResult> {
+    let addressWithUtxo: AddressWithUtxo | undefined;
+
     try {
       const {
         vaultAccountId,
@@ -447,7 +469,7 @@ export class StakingService {
       this.logger.info(`Registering vault account ${vaultAccountId} as a DRep`);
 
       const minInputAmount = depositAmount + fee;
-      const addressWithUtxo = await this.utxoProvider.findAddressWithSuitableUtxo(
+      addressWithUtxo = await this.utxoProvider.findAddressWithSuitableUtxo(
         vaultAccountId,
         minInputAmount
       );
@@ -490,6 +512,8 @@ export class StakingService {
       };
     } catch (error: unknown) {
       throw this.errorHandler.handleApiError(error, "registering as DRep");
+    } finally {
+      addressWithUtxo?.release();
     }
   }
 
@@ -497,6 +521,8 @@ export class StakingService {
    * Cast a governance vote as a DRep (Conway era)
    */
   async castVote(options: CastVoteOptions): Promise<CastVoteResult> {
+    let addressWithUtxo: AddressWithUtxo | undefined;
+
     try {
       const {
         vaultAccountId,
@@ -513,7 +539,7 @@ export class StakingService {
       const voteInteger: 0 | 1 | 2 = vote === "no" ? 0 : vote === "yes" ? 1 : 2;
 
       const minInputAmount = fee;
-      const addressWithUtxo = await this.utxoProvider.findAddressWithSuitableUtxo(
+      addressWithUtxo = await this.utxoProvider.findAddressWithSuitableUtxo(
         vaultAccountId,
         minInputAmount
       );
@@ -554,6 +580,8 @@ export class StakingService {
       };
     } catch (error: unknown) {
       throw this.errorHandler.handleApiError(error, "casting governance vote");
+    } finally {
+      addressWithUtxo?.release();
     }
   }
 
