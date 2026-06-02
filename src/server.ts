@@ -6,6 +6,7 @@ import express, { Request, Response } from "express";
 
 import { config, Logger } from "./utils/index.js";
 import { getSwaggerSpec, swaggerUi } from "./utils/swagger.js";
+import { applySecurityMiddleware, getMaxBodySize } from "./middleware/security.js";
 import { SdkManager } from "./pool/sdkManager.js";
 import { configureRouter } from "./api/router.js";
 import { FireblocksCardanoRawSDK } from "./FireblocksCardanoRawSDK.js";
@@ -49,6 +50,7 @@ const startServer = () => {
   // Configure middlewares with raw body preservation for webhook endpoint
   app.use(
     express.json({
+      limit: getMaxBodySize(),
       verify: (req, _res, buf, _encoding) => {
         // Preserve raw body for webhook signature verification
         const r = req as Request & { url?: string; rawBody?: Buffer };
@@ -58,7 +60,11 @@ const startServer = () => {
       },
     })
   );
-  app.use(express.urlencoded({ extended: true }));
+  app.use(express.urlencoded({ extended: true, limit: getMaxBodySize() }));
+
+  // Apply security middleware (CORS, rate limiting, optional API key auth)
+  applySecurityMiddleware(app);
+
   app.use(errorHandler);
 
   // Initialize base config for Fireblocks
