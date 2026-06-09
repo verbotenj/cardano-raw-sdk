@@ -1,5 +1,6 @@
 import { describe, it, expect } from '@jest/globals';
 import { z } from 'zod';
+import { bech32 } from 'bech32';
 import {
   vaultAccountIdParamsSchema,
   poolIdParamsSchema,
@@ -12,7 +13,15 @@ import {
   withdrawRewardsRequestSchema,
   registerAsDRepRequestSchema,
   castVoteRequestSchema,
+  delegateToDRepRequestSchema,
 } from '../../api/validation.js';
+
+const encodeBech32 = (hrp: string, bytes: Buffer): string =>
+  bech32.encode(hrp, bech32.toWords(bytes), 1000);
+
+const VALID_DREP_KEY_HEX = 'a'.repeat(56); // 28 bytes
+const VALID_DREP_KEY_BECH32 = encodeBech32('drep', Buffer.alloc(28, 0x11));
+const VALID_DREP_SCRIPT_BECH32 = encodeBech32('drep_script', Buffer.alloc(28, 0x22));
 
 describe('vaultAccountIdParamsSchema', () => {
   it('should accept valid vault account ID', () => {
@@ -523,5 +532,105 @@ describe('castVoteRequestSchema', () => {
       fee: 1_000_000,
     });
     expect(result.fee).toBe(1_000_000);
+  });
+
+  // M-07: governanceActionId.index must be a uint16 (0..65535) per Conway CDDL
+  describe('M-07: governanceActionId.index uint16 bound', () => {
+    it('accepts the maximum allowed index (65535)', () => {
+      const result = castVoteRequestSchema.parse({
+        vaultAccountId: '0',
+        governanceActionId: { txHash: 'a'.repeat(64), index: 65535 },
+        vote: 'yes',
+      });
+      expect(result.governanceActionId.index).toBe(65535);
+    });
+
+    it('rejects index above uint16 max (65536)', () => {
+      expect(() =>
+        castVoteRequestSchema.parse({
+          vaultAccountId: '0',
+          governanceActionId: { txHash: 'a'.repeat(64), index: 65536 },
+          vote: 'yes',
+        })
+      ).toThrow(z.ZodError);
+    });
+
+    it('rejects a very large index', () => {
+      expect(() =>
+        castVoteRequestSchema.parse({
+          vaultAccountId: '0',
+          governanceActionId: { txHash: 'a'.repeat(64), index: 2 ** 32 },
+          vote: 'yes',
+        })
+      ).toThrow(z.ZodError);
+    });
+  });
+});
+
+// M-08: DRep ID must be 56-char hex OR a valid bech32 (drep/drep_script) decoding to 28 bytes
+describe('delegateToDRepRequestSchema - M-08 DRep ID validation', () => {
+  const baseValid = {
+    vaultAccountId: '0',
+    drepAction: 'custom-drep' as const,
+  };
+
+  it('accepts a 56-character hex DRep ID', () => {
+    const result = delegateToDRepRequestSchema.parse({
+      ...baseValid,
+      drepId: VALID_DREP_KEY_HEX,
+    });
+    expect(result.drepId).toBe(VALID_DREP_KEY_HEX);
+  });
+
+  it('accepts a valid drep1... bech32 DRep ID', () => {
+    const result = delegateToDRepRequestSchema.parse({
+      ...baseValid,
+      drepId: VALID_DREP_KEY_BECH32,
+    });
+    expect(result.drepId).toBe(VALID_DREP_KEY_BECH32);
+  });
+
+  it('accepts a valid drep_script1... bech32 DRep ID', () => {
+    const result = delegateToDRepRequestSchema.parse({
+      ...baseValid,
+      drepId: VALID_DREP_SCRIPT_BECH32,
+    });
+    expect(result.drepId).toBe(VALID_DREP_SCRIPT_BECH32);
+  });
+
+  it('rejects a bech32 string with an invalid checksum', () => {
+    // Corrupt the last char of a valid bech32 string to break the checksum
+    const corrupted =
+      VALID_DREP_KEY_BECH32.slice(0, -1) +
+      (VALID_DREP_KEY_BECH32.endsWith('q') ? 'p' : 'q');
+    expect(() =>
+      delegateToDRepRequestSchema.parse({ ...baseValid, drepId: corrupted })
+    ).toThrow(z.ZodError);
+  });
+
+  it('rejects a bech32 string whose payload is not 28 bytes', () => {
+    const wrongLen = encodeBech32('drep', Buffer.alloc(20, 0x11));
+    expect(() =>
+      delegateToDRepRequestSchema.parse({ ...baseValid, drepId: wrongLen })
+    ).toThrow(z.ZodError);
+  });
+
+  it('rejects a bech32 string with an unknown HRP', () => {
+    const wrongHrp = encodeBech32('stake', Buffer.alloc(28, 0x11));
+    expect(() =>
+      delegateToDRepRequestSchema.parse({ ...baseValid, drepId: wrongHrp })
+    ).toThrow(z.ZodError);
+  });
+
+  it('rejects a hex string of the wrong length', () => {
+    expect(() =>
+      delegateToDRepRequestSchema.parse({ ...baseValid, drepId: 'ab'.repeat(20) })
+    ).toThrow(z.ZodError);
+  });
+
+  it('rejects free-form strings that match neither hex nor bech32', () => {
+    expect(() =>
+      delegateToDRepRequestSchema.parse({ ...baseValid, drepId: 'not-a-drep-id' })
+    ).toThrow(z.ZodError);
   });
 });
