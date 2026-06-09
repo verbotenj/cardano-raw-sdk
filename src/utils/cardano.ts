@@ -789,12 +789,16 @@ const convergeTransactionFee = (
     currentFee = calculatedFee;
   }
 
-  logger.warn(
-    `[${label}] fee did not converge after ${CardanoConstants.TX_FEE_MAX_ITERATIONS} iterations`
+  // Non-convergence is unsafe: returning the last estimate would build a tx
+  // whose declared fee is below the network minimum, and the node will reject
+  // it. Fail loudly instead so the caller can retry or surface the error.
+  throw new SdkApiError(
+    `[${label}] fee did not converge after ${CardanoConstants.TX_FEE_MAX_ITERATIONS} iterations`,
+    500,
+    "FeeConvergenceError",
+    { label, lastFee: currentFee, maxIterations: CardanoConstants.TX_FEE_MAX_ITERATIONS },
+    "FireblocksCardanoRawSDK"
   );
-  const finalOutputs = buildOutputsFn(currentFee);
-  const finalTxBody = buildTransaction({ txInputs, txOutputs: finalOutputs, fee: currentFee, ttl });
-  return { outputs: finalOutputs, fee: currentFee, txBody: finalTxBody };
 };
 
 /**
