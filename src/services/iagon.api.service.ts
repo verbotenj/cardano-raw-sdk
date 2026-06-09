@@ -34,11 +34,13 @@ const balanceResponseSchema = z.object({
   }),
 });
 
+// Iagon /v1/tx/submit returns either { success: true, data: { txHash } }
+// on a successful submission or { success: false, error: "..." } on rejection.
+// Both arrive with HTTP 200, so we parse permissively and surface the error
+// from submitTransfer itself (see below).
 const transferResponseSchema = z.object({
   success: z.boolean(),
-  data: z.object({
-    txHash: z.string(),
-  }),
+  data: z.object({ txHash: z.string() }).optional(),
   error: z.string().optional(),
 });
 import {
@@ -391,10 +393,27 @@ export class IagonApiService {
 
       const response = await this.axiosInstance.post(url, txData);
 
-      if (response.status === 200) {
-        return this.validateResponse(response.data, transferResponseSchema, "submitTransfer");
+      if (response.status !== 200) {
+        throw new SdkApiError(`Unexpected response status: ${response.status}`, response.status);
       }
-      throw new SdkApiError(`Unexpected response status: ${response.status}`, response.status);
+
+      const parsed = this.validateResponse(
+        response.data,
+        transferResponseSchema,
+        "submitTransfer"
+      );
+
+      if (!parsed.success || !parsed.data?.txHash) {
+        throw new SdkApiError(
+          `Transaction submission rejected: ${parsed.error ?? "unknown error"}`,
+          400,
+          "TX_SUBMIT_REJECTED",
+          { iagonError: parsed.error },
+          "iagon-api"
+        );
+      }
+
+      return { success: true, data: parsed.data };
     } catch (error: unknown) {
       throw this.errorHandler.handleApiError(error, `submitting transfer`);
     }

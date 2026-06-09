@@ -664,16 +664,15 @@ export const submitTransaction = async (
     logger.info(`CBOR hex (first 200 chars): ${txCbor.substring(0, 200)}`);
     logger.info(`CBOR hex (full): ${txCbor}`);
 
-    // Submit transaction using Iagon API
+    // submitTransfer throws on rejection with the upstream Iagon error
+    // message preserved, so we don't need to re-check response.success here.
     const response = await iagonApiService.submitTransfer(txCbor, false);
-
-    if (response.success) {
-      logger.info(`Transaction successfully submitted. Transaction ID: ${response.data.txHash}`);
-      return response.data.txHash;
-    }
-
-    throw new Error("Transaction submission failed");
+    logger.info(`Transaction successfully submitted. Transaction ID: ${response.data.txHash}`);
+    return response.data.txHash;
   } catch (error) {
+    // Preserve SdkApiError (and its TX_SUBMIT_REJECTED type) so callers can
+    // pattern-match on it. Wrap only generic errors.
+    if (error instanceof SdkApiError) throw error;
     throw new Error(
       `Error submitting transaction: ${error instanceof Error ? error.message : error}`,
       { cause: error }
