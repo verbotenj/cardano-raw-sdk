@@ -129,6 +129,16 @@ export const calculateTransactionFee = (tx: Transaction): number => {
   return parseInt(calculatedFee.to_str());
 };
 
+/**
+ * A UTxO is spendable by this SDK only with a simple Ed25519 witness.
+ * UTxOs carrying a datum_hash (Plutus v1/v2 inputs) or a script_hash
+ * (script-locked outputs) require a Plutus/native-script witness and
+ * must be excluded from selection.
+ */
+export const isSpendableUtxo = (utxo: UtxoData): boolean => {
+  return !utxo.datum_hash && !utxo.script_hash;
+};
+
 export const fetchAndSelectUtxosForCnt = async (params: fetchAndSelectUtxosForCntParams) => {
   const {
     iagonApiService,
@@ -141,7 +151,9 @@ export const fetchAndSelectUtxosForCnt = async (params: fetchAndSelectUtxosForCn
   } = params;
   try {
     const rawUtxos = await fetchUtxos(iagonApiService, address);
-    const utxos = rawUtxos.filter((u) => !utxoLocks.isLocked(u.transaction_id, u.output_index));
+    const utxos = rawUtxos.filter(
+    (u) => !utxoLocks.isLocked(u.transaction_id, u.output_index) && isSpendableUtxo(u)
+  );
 
     const tokenUtxosWithAmounts = filterUtxos(utxos, tokenPolicyId, tokenName)
       .map((utxo) => ({
@@ -770,7 +782,9 @@ export const fetchAndSelectUtxosForAda = async (
   const { iagonApiService, address, lovelaceAmount, transactionFee, lock = false } = params;
 
   const rawUtxos = await fetchUtxos(iagonApiService, address);
-  const utxos = rawUtxos.filter((u) => !utxoLocks.isLocked(u.transaction_id, u.output_index));
+  const utxos = rawUtxos.filter(
+    (u) => !utxoLocks.isLocked(u.transaction_id, u.output_index) && isSpendableUtxo(u)
+  );
   if (!utxos || utxos.length === 0) {
     throw new Error(`No UTxOs found for address: ${address}`);
   }
@@ -949,7 +963,9 @@ export const fetchAndSelectUtxosForMultiToken = async (
   const { iagonApiService, address, tokens, transactionFee, lovelaceAmount, lock = false } = params;
 
   const rawUtxos = await fetchUtxos(iagonApiService, address);
-  const utxos = rawUtxos.filter((u) => !utxoLocks.isLocked(u.transaction_id, u.output_index));
+  const utxos = rawUtxos.filter(
+    (u) => !utxoLocks.isLocked(u.transaction_id, u.output_index) && isSpendableUtxo(u)
+  );
   if (!utxos || utxos.length === 0) {
     throw new Error(`No UTxOs found for address: ${address}`);
   }
