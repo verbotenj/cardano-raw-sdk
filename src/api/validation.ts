@@ -389,7 +389,11 @@ export const castVoteRequestSchema = z.object({
       .string()
       .length(64, "governanceActionId.txHash must be a 64-character hex string")
       .regex(/^[0-9a-fA-F]{64}$/, "governanceActionId.txHash must be hex"),
-    index: z.number().int().nonnegative("governanceActionId.index must be a non-negative integer"),
+    index: z
+      .number()
+      .int()
+      .min(0, "governanceActionId.index must be a non-negative integer")
+      .max(65535, "governanceActionId.index must fit in uint16 (0-65535) per Conway CDDL"),
   }),
   vote: z.enum(["yes", "no", "abstain"], { message: 'vote must be "yes", "no", or "abstain"' }),
   anchor: anchorSchema.optional(),
