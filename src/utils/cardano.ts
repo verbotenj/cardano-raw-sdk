@@ -131,6 +131,34 @@ export const calculateTransactionFee = (tx: Transaction): number => {
 };
 
 /**
+ * Throws if a serialized transaction would exceed the network maxTxSize.
+ * Uses a conservative projection that accounts for one Ed25519 witness and
+ * the surrounding CBOR overhead, so the check is meaningful for the
+ * already-signed and not-yet-signed forms alike.
+ */
+export const assertTxSizeWithinLimit = (
+  serializedTxBodyOrTx: Uint8Array,
+  context: string
+): void => {
+  const bodyLen = serializedTxBodyOrTx.length;
+  const projected = bodyLen + CardanoConstants.TX_WITNESS_SIZE_BYTES + 16;
+  if (projected > CardanoConstants.MAX_TX_SIZE_BYTES) {
+    throw new SdkApiError(
+      `Transaction too large: estimated ${projected} bytes exceeds maxTxSize=${CardanoConstants.MAX_TX_SIZE_BYTES}`,
+      400,
+      "TxSizeLimitExceeded",
+      {
+        context,
+        bodyBytes: bodyLen,
+        projectedSignedBytes: projected,
+        maxTxSize: CardanoConstants.MAX_TX_SIZE_BYTES,
+      },
+      "FireblocksCardanoRawSDK"
+    );
+  }
+};
+
+/**
  * A UTxO is spendable by this SDK only with a simple Ed25519 witness.
  * UTxOs carrying a datum_hash (Plutus v1/v2 inputs) or a script_hash
  * (script-locked outputs) require a Plutus/native-script witness and

@@ -30,6 +30,7 @@ import {
   utxoLocks,
   setProtocolParams,
   assertRecipientAddress,
+  assertTxSizeWithinLimit,
 } from "./utils/index.js";
 
 import {
@@ -887,6 +888,7 @@ export class FireblocksCardanoRawSDK {
     txBody: TransactionBody,
     assetId: SupportedAssets = SupportedAssets.ADA
   ): Promise<Transaction> {
+    assertTxSizeWithinLimit(txBody.to_bytes(), "signTransaction");
     const txHashHex = this.calculateTransactionHash(txBody);
     const transactionPayload = this.createFireblocksTransactionPayload(assetId, txHashHex);
 

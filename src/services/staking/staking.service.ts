@@ -21,6 +21,7 @@ import {
   embedSignaturesInTx,
   getSigningPayload,
   drepActionToDRepInfo,
+  assertTxSizeWithinLimit,
 } from "../../utils/index.js";
 
 import {
@@ -710,6 +711,7 @@ export class StakingService {
     });
 
     // Sign transaction
+    assertTxSizeWithinLimit(serialized, `staking:${operation}`);
     const txHash = getSigningPayload(serialized);
     const witnesses = await this.transactionSigner.signTransaction({
       txHash: txHash.toString("hex"),

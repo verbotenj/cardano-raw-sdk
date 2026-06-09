@@ -38,6 +38,12 @@ export enum CardanoConstants {
    * independent protocol constants that must be updated separately if either changes.
    */
   MIN_UTXO_BASE_LOVELACE = 1_000_000,
+  /**
+   * Maximum on-chain transaction size in bytes (Cardano protocol parameter
+   * maxTxSize). Conway mainnet is 16,384. We refuse to sign anything larger
+   * because the network would reject it.
+   */
+  MAX_TX_SIZE_BYTES = 16_384,
 }
 
 export enum CardanoAmounts {
