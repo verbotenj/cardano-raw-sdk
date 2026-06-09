@@ -76,9 +76,16 @@ export class StakingValidator implements IStakingValidator {
       const stakeAddress = await this.addressResolver.getStakeAddress(vaultAccountId);
       const accountInfo = await this.iagonApiService.getStakeAccountInfo(stakeAddress);
       return accountInfo.data.active;
-    } catch {
-      this.logger.info("Stake key not yet registered");
-      return false;
+    } catch (err) {
+      // 404 = the stake account legitimately does not exist on-chain.
+      // Any other failure (network, 5xx, parse error) must propagate so
+      // callers don't mistake an outage for "not registered" and skip a
+      // deregistration / submit a duplicate registration.
+      if (err instanceof SdkApiError && err.statusCode === 404) {
+        this.logger.info("Stake key not yet registered");
+        return false;
+      }
+      throw err;
     }
   }
 }
