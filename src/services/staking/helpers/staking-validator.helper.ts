@@ -50,7 +50,25 @@ export class StakingValidator implements IStakingValidator {
       this.logger.info(`Already delegated to pool ${poolId}`);
     }
 
-    await this.iagonApiService.getPoolInfo(poolId);
+    const poolInfo = await this.iagonApiService.getPoolInfo(poolId);
+    if (!poolInfo?.data) {
+      throw new SdkApiError(
+        `Pool ${poolId} not found`,
+        404,
+        "PoolNotFound",
+        { poolId },
+        "staking-service"
+      );
+    }
+    if (poolInfo.data.retirement && poolInfo.data.retirement.length > 0) {
+      throw new SdkApiError(
+        `Pool ${poolId} has filed a retirement certificate and cannot accept new delegations`,
+        400,
+        "PoolRetired",
+        { poolId, retirement: poolInfo.data.retirement },
+        "staking-service"
+      );
+    }
   }
 
   async checkRegistrationStatus(vaultAccountId: string): Promise<boolean> {
