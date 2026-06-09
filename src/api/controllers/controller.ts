@@ -796,11 +796,17 @@ export class ApiController {
         type: error.errorType,
       });
     } else {
-      const message = error instanceof Error ? error.message : "Unknown error";
+      // Log the full error server-side, but never echo arbitrary internal
+      // exception messages to the API consumer.
+      const message = error instanceof Error ? error.message : String(error);
       this.logger.error(`${endpoint} - UnhandledError:`, message);
+      if (error instanceof Error && error.stack) {
+        this.logger.error(`${endpoint} - stack:`, error.stack);
+      }
       res.status(500).json({
         success: false,
-        error: message,
+        error: "Internal server error",
+        type: "InternalServerError",
       });
     }
   }
