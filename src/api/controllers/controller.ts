@@ -787,13 +787,13 @@ export class ApiController {
         message: error.message,
       });
 
+      // errorInfo and service are logged server-side only; keep the public
+      // response minimal to avoid leaking internal context.
       res.status(statusCode).json({
         success: false,
         error: error.message,
         statusCode: error.statusCode,
         type: error.errorType,
-        info: error.errorInfo,
-        service: error.service,
       });
     } else {
       const message = error instanceof Error ? error.message : "Unknown error";
