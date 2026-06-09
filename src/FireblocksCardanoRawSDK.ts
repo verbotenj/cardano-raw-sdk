@@ -512,6 +512,58 @@ export class FireblocksCardanoRawSDK {
   }
 
   /**
+   * Iterates the underlying paginated history endpoint for a single address
+   * and concatenates every page until pagination.hasMore is false (or the
+   * server reports no more rows). If the caller pinned an explicit limit
+   * the original single-page semantics are preserved so existing query
+   * shapes still work.
+   */
+  private async fetchAllPagesForAddress<T extends { tx_hash: string; slot_no: number }>(
+    fetchFn: (params: {
+      address: string;
+      limit?: number;
+      offset?: number;
+      fromSlot?: number;
+    }) => Promise<{
+      success: boolean;
+      data?: T[];
+      last_updated?: LastUpdated;
+      pagination?: TransactionPagination;
+    }>,
+    address: string,
+    options: { limit?: number; offset?: number; fromSlot?: number }
+  ): Promise<{ success: boolean; data?: T[]; last_updated?: LastUpdated }> {
+    if (options.limit !== undefined) {
+      return fetchFn({ address, ...options });
+    }
+
+    const PAGE_SIZE = 100;
+    const MAX_PAGES = 1000; // safety bound: 100k transactions per address
+    const aggregated: T[] = [];
+    let lastUpdated: LastUpdated | undefined;
+    let offset = options.offset ?? 0;
+
+    for (let page = 0; page < MAX_PAGES; page++) {
+      const response = await fetchFn({
+        address,
+        limit: PAGE_SIZE,
+        offset,
+        fromSlot: options.fromSlot,
+      });
+      const items = response.data ?? [];
+      aggregated.push(...items);
+      lastUpdated = response.last_updated ?? lastUpdated;
+
+      const hasMore = response.pagination?.hasMore;
+      if (hasMore === false) break;
+      if (items.length < PAGE_SIZE) break; // server returned a short page → end of stream
+      offset += items.length;
+    }
+
+    return { success: true, data: aggregated, last_updated: lastUpdated };
+  }
+
+  /**
    * Fetches transaction history across all vault addresses.
    * Shared by getAllTransactionHistory() and getAllDetailedTxHistory().
    */
@@ -521,7 +573,12 @@ export class FireblocksCardanoRawSDK {
       limit?: number;
       offset?: number;
       fromSlot?: number;
-    }) => Promise<{ success: boolean; data?: T[]; last_updated?: LastUpdated }>,
+    }) => Promise<{
+      success: boolean;
+      data?: T[];
+      last_updated?: LastUpdated;
+      pagination?: TransactionPagination;
+    }>,
     options: { limit?: number; offset?: number; fromSlot?: number; groupByAddress?: boolean }
   ): Promise<{
     success: boolean;
@@ -554,7 +611,7 @@ export class FireblocksCardanoRawSDK {
 
     const validAddresses = addressesResponse.filter((addr) => addr.address);
     const allHistories = await Promise.all(
-      validAddresses.map((addr) => fetchFn({ address: addr.address!, ...options }))
+      validAddresses.map((addr) => this.fetchAllPagesForAddress(fetchFn, addr.address!, options))
     );
 
     const mostRecentUpdate = allHistories.reduce((latest, current) => {
