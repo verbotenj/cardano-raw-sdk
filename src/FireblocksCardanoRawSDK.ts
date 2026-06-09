@@ -968,46 +968,72 @@ export class FireblocksCardanoRawSDK {
     const publicKeyBytes = Uint8Array.from(Buffer.from(signatureResponse.publicKey, "hex"));
     const signatureBytes = Uint8Array.from(Buffer.from(signatureResponse.signature.fullSig, "hex"));
 
-    const pubKey = PublicKey.from_bytes(publicKeyBytes);
-    const cardanoPubKey = Vkey.new(pubKey);
-    pubKey.free();
-    const cardanoSig = Ed25519Signature.from_bytes(signatureBytes);
+    // Track every WASM handle allocated below so we can free them on any
+    // exception path before returning. The successful path also frees the
+    // intermediates and only the returned Transaction stays live.
+    let pubKey: PublicKey | undefined;
+    let cardanoPubKey: Vkey | undefined;
+    let cardanoSig: Ed25519Signature | undefined;
+    let witness: Vkeywitness | undefined;
+    let witnesses: Vkeywitnesses | undefined;
+    let witnessSet: TransactionWitnessSet | undefined;
+    let signedTx: Transaction | undefined;
 
-    const witness = Vkeywitness.new(cardanoPubKey, cardanoSig);
-    cardanoPubKey.free();
-    cardanoSig.free();
-    const witnesses = Vkeywitnesses.new();
-    witnesses.add(witness);
-    witness.free();
+    try {
+      pubKey = PublicKey.from_bytes(publicKeyBytes);
+      cardanoPubKey = Vkey.new(pubKey);
+      cardanoSig = Ed25519Signature.from_bytes(signatureBytes);
 
-    const witnessSet = TransactionWitnessSet.new();
-    witnessSet.set_vkeys(witnesses);
-    witnesses.free();
+      witness = Vkeywitness.new(cardanoPubKey, cardanoSig);
+      witnesses = Vkeywitnesses.new();
+      witnesses.add(witness);
 
-    const signedTx = Transaction.new(txBody, witnessSet);
+      witnessSet = TransactionWitnessSet.new();
+      witnessSet.set_vkeys(witnesses);
 
-    // Verify the fee is sufficient using Cardano's min_fee calculation
-    const minRequiredFee = calculateTransactionFee(signedTx);
-    witnessSet.free();
-    const allocatedFee = parseInt(txBody.fee().to_str());
+      signedTx = Transaction.new(txBody, witnessSet);
 
-    if (minRequiredFee > allocatedFee) {
-      throw new SdkApiError(
-        `Transaction requires minimum ${minRequiredFee} lovelace but only ${allocatedFee} lovelace was allocated. This indicates a bug in fee calculation.`,
-        500,
-        "FeeEstimationError",
-        { minRequiredFee, allocatedFee, difference: minRequiredFee - allocatedFee },
+      // Verify the fee is sufficient using Cardano's min_fee calculation
+      const minRequiredFee = calculateTransactionFee(signedTx);
+      const allocatedFee = parseInt(txBody.fee().to_str());
+
+      if (minRequiredFee > allocatedFee) {
+        throw new SdkApiError(
+          `Transaction requires minimum ${minRequiredFee} lovelace but only ${allocatedFee} lovelace was allocated. This indicates a bug in fee calculation.`,
+          500,
+          "FeeEstimationError",
+          { minRequiredFee, allocatedFee, difference: minRequiredFee - allocatedFee },
         "FireblocksCardanoRawSDK"
       );
     }
 
-    const feeDifference = allocatedFee - minRequiredFee;
-    this.logger.info(
-      `Transaction fee verified: allocated ${allocatedFee} lovelace, ` +
-        `minimum required ${minRequiredFee} lovelace (margin: ${feeDifference} lovelace)`
-    );
+      const feeDifference = allocatedFee - minRequiredFee;
+      this.logger.info(
+        `Transaction fee verified: allocated ${allocatedFee} lovelace, ` +
+          `minimum required ${minRequiredFee} lovelace (margin: ${feeDifference} lovelace)`
+      );
 
-    return signedTx;
+      // Successful path: free intermediates, keep signedTx alive for the caller.
+      pubKey.free();
+      cardanoPubKey.free();
+      cardanoSig.free();
+      witness.free();
+      witnesses.free();
+      witnessSet.free();
+      const result = signedTx;
+      signedTx = undefined; // prevent the catch/finally from freeing it
+      return result;
+    } catch (err) {
+      // Free any handle that was allocated before the throw.
+      signedTx?.free();
+      witnessSet?.free();
+      witnesses?.free();
+      witness?.free();
+      cardanoSig?.free();
+      cardanoPubKey?.free();
+      pubKey?.free();
+      throw err;
+    }
   }
 
   // ─── Transfer Architecture ──────────────────────────────────────────────────
@@ -1252,8 +1278,13 @@ export class FireblocksCardanoRawSDK {
       // Sign transaction with Fireblocks
       const signedTransaction = await this.signTransaction(txBody);
 
-      // Submit transaction to blockchain
-      const txHash = await submitTransaction(this.iagonApiService, signedTransaction);
+      // Submit transaction to blockchain (free WASM handle once serialized).
+      let txHash: string;
+      try {
+        txHash = await submitTransaction(this.iagonApiService, signedTransaction);
+      } finally {
+        signedTransaction.free();
+      }
 
       this.logger.info(`Transfer successful: ${txHash} (fee: ${feeFormatted.value} ADA)`);
 
@@ -1748,7 +1779,12 @@ export class FireblocksCardanoRawSDK {
       );
 
       const signedTransaction = await this.signTransaction(txBody);
-      const txHash = await submitTransaction(this.iagonApiService, signedTransaction);
+      let txHash: string;
+      try {
+        txHash = await submitTransaction(this.iagonApiService, signedTransaction);
+      } finally {
+        signedTransaction.free();
+      }
 
       this.logger.info(
         `Multi-token transfer successful: ${txHash} (fee: ${feeFormatted.value} ADA)`
@@ -1867,7 +1903,12 @@ export class FireblocksCardanoRawSDK {
       );
 
       const signedTransaction = await this.signTransaction(txBody);
-      const txHash = await submitTransaction(this.iagonApiService, signedTransaction);
+      let txHash: string;
+      try {
+        txHash = await submitTransaction(this.iagonApiService, signedTransaction);
+      } finally {
+        signedTransaction.free();
+      }
       this.logger.info(`UTxO consolidation successful: ${txHash}`);
 
       const { lovelace: outputLovelace, tokenPolicies } = this.extractOutputMetadata(outputs[0]);
@@ -1930,7 +1971,12 @@ export class FireblocksCardanoRawSDK {
         );
 
         const signedTransaction = await this.signTransaction(txBody);
-        const txHash = await submitTransaction(this.iagonApiService, signedTransaction);
+        let txHash: string;
+        try {
+          txHash = await submitTransaction(this.iagonApiService, signedTransaction);
+        } finally {
+          signedTransaction.free();
+        }
 
         batches.push({
           txHash,
