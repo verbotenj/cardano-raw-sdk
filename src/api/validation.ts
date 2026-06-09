@@ -5,9 +5,10 @@ import { bech32 } from "bech32";
 import { getProtocolParams } from "../utils/protocolParams.js";
 
 /**
- * Validate a DRep ID. Accepts either:
+ * Validate a DRep ID. Accepts:
  * - a 56-char hex string (28-byte credential), or
- * - a bech32 string with HRP "drep" or "drep_script" decoding to 28 bytes.
+ * - CIP-105 bech32 (HRP "drep" or "drep_script", 28-byte payload), or
+ * - CIP-129 bech32 (HRP "drep", 29-byte payload = header + 28-byte hash).
  * Verifies the bech32 checksum and payload length.
  */
 const isValidDrepId = (id: string): boolean => {
@@ -17,7 +18,11 @@ const isValidDrepId = (id: string): boolean => {
     const decoded = bech32.decode(id, 1000);
     if (decoded.prefix !== "drep" && decoded.prefix !== "drep_script") return false;
     const bytes = bech32.fromWords(decoded.words);
-    return bytes.length === 28;
+    // CIP-105 = 28 bytes (raw hash); CIP-129 = 29 bytes (header byte + hash).
+    // CIP-129 only uses HRP "drep"; "drep_script" implies CIP-105.
+    if (bytes.length === 28) return true;
+    if (bytes.length === 29 && decoded.prefix === "drep") return true;
+    return false;
   } catch {
     return false;
   }

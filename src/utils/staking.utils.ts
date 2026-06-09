@@ -442,26 +442,27 @@ const validateAnchorDataHash = (dataHash: string): void => {
 };
 
 const decodeDRepId = (drepId: string): { keyHash: Buffer; isScript: boolean } => {
-  // Check if it's bech32 format (starts with drep1 or drep_script1)
+  // Bech32 forms accepted:
+  //  - CIP-129: HRP "drep", 29-byte payload (header 0x22/0x23 + 28-byte hash)
+  //  - CIP-105 legacy: HRP "drep" (key) or "drep_script" (script), 28-byte payload
   if (drepId.startsWith("drep1") || drepId.startsWith("drep_script1")) {
     const decoded = bech32.decode(drepId, 1000);
     const fullBytes = Buffer.from(bech32.fromWords(decoded.words));
 
-    // Expected: 1 header byte + 28 credential bytes = 29 bytes total
-    if (fullBytes.length !== DREP_CREDENTIAL_BYTES + 1) {
-      throw new Error(
-        `Invalid DRep ID: bech32 payload must be ${DREP_CREDENTIAL_BYTES + 1} bytes, got ${fullBytes.length}`
-      );
+    if (fullBytes.length === DREP_CREDENTIAL_BYTES + 1) {
+      // CIP-129: header 0x22 = key-hash, 0x23 = script-hash
+      const isScript = (fullBytes[0] & 0x01) === 1;
+      return { keyHash: Buffer.from(fullBytes.subarray(1)), isScript };
     }
 
-    // First byte is the header indicating the type
-    const header = fullBytes[0];
-    const keyHash = Buffer.from(fullBytes.subarray(1)); // Skip header byte to get 28-byte key hash
+    if (fullBytes.length === DREP_CREDENTIAL_BYTES) {
+      // CIP-105: HRP distinguishes key vs script
+      return { keyHash: fullBytes, isScript: decoded.prefix === "drep_script" };
+    }
 
-    // Header format: 0b00100010 (0x22) for key hash, 0b00100011 (0x23) for script hash
-    const isScript = (header & 0x01) === 1;
-
-    return { keyHash, isScript };
+    throw new Error(
+      `Invalid DRep ID: bech32 payload must be ${DREP_CREDENTIAL_BYTES} or ${DREP_CREDENTIAL_BYTES + 1} bytes, got ${fullBytes.length}`
+    );
   }
 
   // Hex format: must be exactly 56 hex characters (28 bytes)
@@ -562,16 +563,15 @@ export const buildDRepRegistrationCertificate = (
 };
 
 /**
- * Encode a stake credential as a bech32 DRep ID
- * Key-based DRep: hrp="drep", header=0x22
- * Script-based DRep: hrp="drep_script", header=0x23
+ * Encode a stake credential as a CIP-129 DRep ID.
+ * Per CIP-129 the HRP is always "drep"; the type is encoded in the leading
+ * header byte (0x22 = key-hash, 0x23 = script-hash).
  */
 export const encodeDRepId = (credential: Buffer, isScript: boolean = false): string => {
   const header = Buffer.from([isScript ? 0x23 : 0x22]);
   const fullBytes = Buffer.concat([header, credential]);
   const words = bech32.toWords(fullBytes);
-  const hrp = isScript ? "drep_script" : "drep";
-  return bech32.encode(hrp, words, 1000);
+  return bech32.encode("drep", words, 1000);
 };
 
 /**

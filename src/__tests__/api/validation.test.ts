@@ -22,6 +22,15 @@ const encodeBech32 = (hrp: string, bytes: Buffer): string =>
 const VALID_DREP_KEY_HEX = 'a'.repeat(56); // 28 bytes
 const VALID_DREP_KEY_BECH32 = encodeBech32('drep', Buffer.alloc(28, 0x11));
 const VALID_DREP_SCRIPT_BECH32 = encodeBech32('drep_script', Buffer.alloc(28, 0x22));
+// CIP-129: HRP="drep", 29-byte payload (header 0x22 key / 0x23 script + 28-byte hash)
+const VALID_DREP_KEY_CIP129 = encodeBech32(
+  'drep',
+  Buffer.concat([Buffer.from([0x22]), Buffer.alloc(28, 0x11)])
+);
+const VALID_DREP_SCRIPT_CIP129 = encodeBech32(
+  'drep',
+  Buffer.concat([Buffer.from([0x23]), Buffer.alloc(28, 0x22)])
+);
 
 describe('vaultAccountIdParamsSchema', () => {
   it('should accept valid vault account ID', () => {
@@ -596,6 +605,32 @@ describe('delegateToDRepRequestSchema - M-08 DRep ID validation', () => {
       drepId: VALID_DREP_SCRIPT_BECH32,
     });
     expect(result.drepId).toBe(VALID_DREP_SCRIPT_BECH32);
+  });
+
+  it('accepts a CIP-129 key-hash DRep ID (HRP=drep, 29-byte payload, header 0x22)', () => {
+    const result = delegateToDRepRequestSchema.parse({
+      ...baseValid,
+      drepId: VALID_DREP_KEY_CIP129,
+    });
+    expect(result.drepId).toBe(VALID_DREP_KEY_CIP129);
+  });
+
+  it('accepts a CIP-129 script-hash DRep ID (HRP=drep, 29-byte payload, header 0x23)', () => {
+    const result = delegateToDRepRequestSchema.parse({
+      ...baseValid,
+      drepId: VALID_DREP_SCRIPT_CIP129,
+    });
+    expect(result.drepId).toBe(VALID_DREP_SCRIPT_CIP129);
+  });
+
+  it('rejects a 29-byte payload with HRP drep_script (CIP-129 only uses HRP drep)', () => {
+    const invalid = encodeBech32(
+      'drep_script',
+      Buffer.concat([Buffer.from([0x23]), Buffer.alloc(28, 0x22)])
+    );
+    expect(() =>
+      delegateToDRepRequestSchema.parse({ ...baseValid, drepId: invalid })
+    ).toThrow(z.ZodError);
   });
 
   it('rejects a bech32 string with an invalid checksum', () => {
