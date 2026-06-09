@@ -305,9 +305,10 @@ export const buildPayload = (
   const { toAddress, txInputs, ttl, certificates, withdrawals, votingProcedures, network } =
     options;
 
-  // Ensure lovelace amounts are CBOR unsigned integers, not floats.
-  const netAmount = Math.round(options.netAmount);
-  const feeAmount = Math.round(options.feeAmount);
+  // Encode lovelace amounts as BigInt so cbor2 emits CBOR unsigned ints
+  // (major type 0) without risking JS Number (53-bit) precision loss.
+  const netAmount = BigInt(Math.round(options.netAmount));
+  const feeAmount = BigInt(Math.round(options.feeAmount));
 
   // Build inputs array
   const inputsArr = txInputs.map((input) => {
