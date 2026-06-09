@@ -379,7 +379,15 @@ Run the SDK as a REST API service using Docker or Node.js directly.
 3. **Start the service**:
 
    ```bash
-   docker-compose up -d
+   # Build the image
+   docker build -t cardano-raw-sdk .
+
+   # Run the container (mounts the local .env and Fireblocks secret key)
+   docker run -d --name cardano-raw-sdk \
+     --env-file .env \
+     -p 8000:8000 \
+     -v "$PWD/secrets:/app/secrets:ro" \
+     cardano-raw-sdk
    ```
 
 4. **Access the API**:
@@ -1375,7 +1383,6 @@ cardano-raw-sdk/
 │   └── server.ts                 # Express server setup
 ├── docs/                         # Generated documentation
 ├── Dockerfile                    # Docker configuration
-├── docker-compose.yml            # Docker Compose setup
 ├── package.json
 ├── tsconfig.json
 └── README.md
@@ -1389,20 +1396,24 @@ cardano-raw-sdk/
 docker build -t cardano-raw-sdk:latest .
 ```
 
-#### Run with Docker Compose
+#### Run the Container
 
 ```bash
-# Start services
-docker-compose up -d
+# Start the service
+docker run -d --name cardano-raw-sdk \
+  --env-file .env \
+  -p 8000:8000 \
+  -v "$PWD/secrets:/app/secrets:ro" \
+  cardano-raw-sdk:latest
 
 # View logs
-docker-compose logs -f
+docker logs -f cardano-raw-sdk
 
-# Stop services
-docker-compose down
+# Stop the service
+docker stop cardano-raw-sdk
 
-# Restart services
-docker-compose restart
+# Restart the service
+docker restart cardano-raw-sdk
 ```
 
 #### Docker Compose Configuration
@@ -1522,7 +1533,7 @@ await sdk.shutdown(); // Clean up resources and clear cache
 3. **Docker container fails to start**
    - Check that the secret key path is correct and file is readable
    - Verify all required environment variables are set
-   - Check Docker logs: `docker-compose logs -f`
+   - Check Docker logs: `docker logs -f cardano-raw-sdk`
 
 ## Deployment Considerations
 
