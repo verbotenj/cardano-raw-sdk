@@ -47,19 +47,10 @@ const startServer = () => {
 
   const app = express();
 
-  // Configure middlewares with raw body preservation for webhook endpoint
-  app.use(
-    express.json({
-      limit: getMaxBodySize(),
-      verify: (req, _res, buf, _encoding) => {
-        // Preserve raw body for webhook signature verification
-        const r = req as Request & { url?: string; rawBody?: Buffer };
-        if (r.url?.split("?")[0] === "/api/webhook") {
-          r.rawBody = buf;
-        }
-      },
-    })
-  );
+  // Webhook uses raw body parser; signature must be verified before parsing JSON
+  app.use("/api/webhook", express.raw({ type: "application/json", limit: getMaxBodySize() }));
+
+  app.use(express.json({ limit: getMaxBodySize() }));
   app.use(express.urlencoded({ extended: true, limit: getMaxBodySize() }));
 
   // Apply security middleware (CORS, rate limiting, optional API key auth)
