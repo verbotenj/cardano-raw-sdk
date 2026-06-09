@@ -1,7 +1,27 @@
 import { z } from "zod";
 import { Request, Response, NextFunction } from "express";
+import { bech32 } from "bech32";
 
 import { getProtocolParams } from "../utils/protocolParams.js";
+
+/**
+ * Validate a DRep ID. Accepts either:
+ * - a 56-char hex string (28-byte credential), or
+ * - a bech32 string with HRP "drep" or "drep_script" decoding to 28 bytes.
+ * Verifies the bech32 checksum and payload length.
+ */
+const isValidDrepId = (id: string): boolean => {
+  if (/^[0-9a-fA-F]{56}$/.test(id)) return true;
+  if (!id.startsWith("drep1") && !id.startsWith("drep_script1")) return false;
+  try {
+    const decoded = bech32.decode(id, 1000);
+    if (decoded.prefix !== "drep" && decoded.prefix !== "drep_script") return false;
+    const bytes = bech32.fromWords(decoded.words);
+    return bytes.length === 28;
+  } catch {
+    return false;
+  }
+};
 
 /**
  * Fee validation bounds.
@@ -335,9 +355,9 @@ export const delegateToDRepRequestSchema = z
     }),
     drepId: z
       .string()
-      .regex(
-        /^(drep1|drep_script1)[a-z0-9]+$|^[0-9a-fA-F]{56}$/,
-        "drepId must be bech32 (drep1... or drep_script1...) or a 56-character hex string"
+      .refine(
+        isValidDrepId,
+        "drepId must be a 56-character hex string or a valid bech32 string with HRP drep/drep_script decoding to 28 bytes"
       )
       .optional(),
     fee: optionalFeeSchema,
