@@ -799,6 +799,7 @@ cp .env.example .env
 | `FIREBLOCKS_API_USER_SECRET_KEY_PATH` | Yes      | -                           | Absolute path to the Fireblocks RSA secret key file            |
 | `FIREBLOCKS_BASE_PATH`                | No       | `https://api.fireblocks.io` | Fireblocks workspace URL - also controls webhook JWKS region   |
 | `IAGON_API_KEY`                       | Yes      | -                           | Iagon API key for blockchain data queries                      |
+| `IAGON_BASE_URL`                      | No       | `https://api.fireblocks.partners.iagon.com` | Override the Iagon API base URL (staging / private deployments) |
 | `CARDANO_NETWORK`                     | No       | `mainnet`                   | `mainnet` or `preprod`                                         |
 | `MAX_BODY_SIZE`                       | No       | `1mb`                       | Maximum request body size                                      |
 | `RATE_LIMIT_WINDOW_MS`                | No       | `900000`                    | Rate limit time window (ms)                                    |
@@ -929,6 +930,8 @@ const sdk = await FireblocksCardanoRawSDK.createInstance({
   vaultAccountId: "123",
   network: Networks.MAINNET,
   iagonApiKey: "...",
+  // Override the Iagon API base URL (optional - falls back to IAGON_BASE_URL env, then default)
+  iagonBaseUrl: "https://staging.iagon.example.com",
   // Override protocol parameters (optional)
   protocolParams: {
     minFeeA: 44,

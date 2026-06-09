@@ -82,7 +82,7 @@ interface CachedAssetInfo {
 export class IagonApiService {
   private readonly logger = new Logger("services:iagon-api-service");
   private network: Networks;
-  private readonly iagonBaseUrl = iagonBaseUrl;
+  private readonly iagonBaseUrl: string;
   private readonly iagonApiKey: string;
   private readonly errorHandler = new ErrorHandler("iagon-api", this.logger);
   private readonly axiosInstance;
@@ -95,7 +95,8 @@ export class IagonApiService {
     apiKey: string,
     network: Networks = Networks.MAINNET,
     assetCacheTTL: number = 1000 * 60 * 60 * 24, // Default: 24 hours
-    disableSslVerification: boolean = false
+    disableSslVerification: boolean = false,
+    baseUrl?: string
   ) {
     // Validate API key is provided and not empty
     if (!apiKey || apiKey.trim() === "") {
@@ -125,6 +126,7 @@ export class IagonApiService {
     this.iagonApiKey = apiKey;
     this.network = network;
     this.ASSET_CACHE_TTL = assetCacheTTL;
+    this.iagonBaseUrl = baseUrl ?? process.env.IAGON_BASE_URL ?? iagonBaseUrl;
 
     // Create axios instance with default headers
     this.axiosInstance = axios.create({

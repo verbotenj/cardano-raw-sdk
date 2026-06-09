@@ -172,6 +172,12 @@ export class FireblocksCardanoRawSDK {
     /** Disable SSL certificate verification (use only in development) */
     disableSslVerification?: boolean;
     /**
+     * Override the Iagon API base URL. Falls back to the IAGON_BASE_URL
+     * environment variable and finally to the built-in default. Useful for
+     * staging/private deployments and tests.
+     */
+    iagonBaseUrl?: string;
+    /**
      * Override Cardano protocol parameters.
      * Use this to adapt to protocol changes without waiting for an SDK update.
      * Only specified fields will be overridden; others use defaults.
@@ -194,6 +200,7 @@ export class FireblocksCardanoRawSDK {
         iagonApiKey,
         assetCacheTTL,
         disableSslVerification = false,
+        iagonBaseUrl: iagonBaseUrlOverride,
         protocolParams,
       } = params;
 
@@ -212,7 +219,8 @@ export class FireblocksCardanoRawSDK {
         iagonApiKey,
         network,
         assetCacheTTL,
-        disableSslVerification
+        disableSslVerification,
+        iagonBaseUrlOverride
       );
       const stakingService = new StakingService(fireblocksService, iagonApiService, network);
       const assetId = network === Networks.MAINNET ? SupportedAssets.ADA : SupportedAssets.ADA_TEST;
