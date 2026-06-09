@@ -29,6 +29,7 @@ import {
   getStakeAddressFromBaseAddress,
   utxoLocks,
   setProtocolParams,
+  assertRecipientAddress,
 } from "./utils/index.js";
 
 import {
@@ -441,40 +442,6 @@ export class FireblocksCardanoRawSDK {
   }
 
   /**
-   * Validates a user-supplied Cardano bech32 address: parses it and ensures
-   * the embedded network id matches the SDK's configured network.
-   */
-  private validateRecipientAddress(recipientAddress: string): void {
-    let parsed;
-    try {
-      parsed = Address.from_bech32(recipientAddress);
-    } catch {
-      throw new SdkApiError(
-        "Invalid recipientAddress: not a valid Cardano bech32 address",
-        400,
-        "ValidationError",
-        { recipientAddress },
-        "FireblocksCardanoRawSDK"
-      );
-    }
-    try {
-      const expectedNetworkId = this.network === Networks.MAINNET ? 1 : 0;
-      const actualNetworkId = parsed.network_id();
-      if (actualNetworkId !== expectedNetworkId) {
-        throw new SdkApiError(
-          `recipientAddress network mismatch: address is for network ${actualNetworkId}, SDK is configured for ${this.network} (network ${expectedNetworkId})`,
-          400,
-          "ValidationError",
-          { recipientAddress, expectedNetworkId, actualNetworkId },
-          "FireblocksCardanoRawSDK"
-        );
-      }
-    } finally {
-      parsed.free();
-    }
-  }
-
-  /**
    * Resolves recipient address from either a direct address or a vault account ID.
    * Validates that exactly one recipient option is provided.
    */
@@ -502,7 +469,7 @@ export class FireblocksCardanoRawSDK {
       );
     }
     if (recipientAddress) {
-      this.validateRecipientAddress(recipientAddress);
+      assertRecipientAddress(recipientAddress, this.network);
     }
     if (recipientVaultAccountId) {
       const recipientAddressData = await this.fireblocksService.getVaultAccountAddress(

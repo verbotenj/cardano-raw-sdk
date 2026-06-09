@@ -29,6 +29,7 @@ import {
   fetchAndSelectUtxosForMultiTokenParams,
   SupportedAssets,
   SdkApiError,
+  Networks,
 } from "../types/index.js";
 import { Logger } from "./logger.js";
 import { CardanoAmounts, CardanoConstants } from "../constants.js";
@@ -137,6 +138,43 @@ export const calculateTransactionFee = (tx: Transaction): number => {
  */
 export const isSpendableUtxo = (utxo: UtxoData): boolean => {
   return !utxo.datum_hash && !utxo.script_hash;
+};
+
+/**
+ * Parses a bech32 Cardano address and asserts it is on the expected network.
+ * Throws SdkApiError on parse failure or network mismatch.
+ */
+export const assertRecipientAddress = (
+  recipientAddress: string,
+  network: Networks
+): void => {
+  let parsed;
+  try {
+    parsed = Address.from_bech32(recipientAddress);
+  } catch {
+    throw new SdkApiError(
+      "Invalid recipientAddress: not a valid Cardano bech32 address",
+      400,
+      "ValidationError",
+      { recipientAddress },
+      "FireblocksCardanoRawSDK"
+    );
+  }
+  try {
+    const expectedNetworkId = network === Networks.MAINNET ? 1 : 0;
+    const actualNetworkId = parsed.network_id();
+    if (actualNetworkId !== expectedNetworkId) {
+      throw new SdkApiError(
+        `recipientAddress network mismatch: address is for network ${actualNetworkId}, SDK is configured for ${network} (network ${expectedNetworkId})`,
+        400,
+        "ValidationError",
+        { recipientAddress, expectedNetworkId, actualNetworkId },
+        "FireblocksCardanoRawSDK"
+      );
+    }
+  } finally {
+    parsed.free();
+  }
 };
 
 export const fetchAndSelectUtxosForCnt = async (params: fetchAndSelectUtxosForCntParams) => {
