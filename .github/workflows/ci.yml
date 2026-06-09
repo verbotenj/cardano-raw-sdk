@@ -105,7 +105,7 @@ jobs:
           FIREBLOCKS_API_USER_KEY: ${{ secrets.FIREBLOCKS_API_KEY }}
           FIREBLOCKS_API_USER_SECRET_KEY: ${{ secrets.FIREBLOCKS_API_SECRET }}
           IAGON_API_KEY: ${{ secrets.IAGON_API_KEY }}
-          CARDANO_NETWORK: mainnet
+          CARDANO_NETWORK: preprod
           TRANSFER_AMOUNT_ADA: '3'
           SOURCE_VAULT: '0'
           DEST_VAULT: '1'
