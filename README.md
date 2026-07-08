@@ -27,7 +27,7 @@ A TypeScript SDK for managing Cardano token transfers through Fireblocks, with i
 - 🔄 **Connection Pooling**: Efficient SDK instance management with automatic cleanup
 - 🌐 **Multi-Network Support**: Works with Cardano mainnet, preprod, and preview networks
 - 🚀 **REST API Server**: Optional Express server for HTTP-based operations
-- 🐳 **Docker Support**: Easy deployment with Docker and Docker Compose
+- 🐳 **Docker Support**: Easy deployment with Docker
 
 ## Table of Contents
 
@@ -45,7 +45,7 @@ A TypeScript SDK for managing Cardano token transfers through Fireblocks, with i
 ### Prerequisites
 
 - Node.js 18+ (for SDK usage)
-- Docker & Docker Compose (for API service deployment)
+- Docker (for API service deployment)
 - Fireblocks API credentials
 - Iagon API key (required for balance queries, transaction history, and transfers)
 
@@ -1414,32 +1414,6 @@ docker stop cardano-raw-sdk
 
 # Restart the service
 docker restart cardano-raw-sdk
-```
-
-#### Docker Compose Configuration
-
-```yaml
-version: "3.8"
-
-services:
-  fireblocks-sdk:
-    build: .
-    ports:
-      - "8000:8000"
-    environment:
-      - PORT=8000
-      - CARDANO_NETWORK=mainnet
-      - POOL_MAX_SIZE=100
-    env_file:
-      - .env
-    volumes:
-      - ./fireblocks_secret.key:/app/fireblocks_secret.key:ro
-    restart: unless-stopped
-    healthcheck:
-      test: ["CMD", "curl", "-f", "http://localhost:8000/health"]
-      interval: 30s
-      timeout: 10s
-      retries: 3
 ```
 
 ## Advanced Features
