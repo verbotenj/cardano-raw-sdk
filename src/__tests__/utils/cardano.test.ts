@@ -1,6 +1,12 @@
 import { describe, it, expect } from '@jest/globals';
 import { bech32 } from 'bech32';
-import { isSpendableUtxo, assertRecipientAddress } from '../../utils/cardano.js';
+import {
+  isSpendableUtxo,
+  assertRecipientAddress,
+  buildAdaTransactionWithCalculatedFee,
+  createTransactionInputs,
+} from '../../utils/cardano.js';
+import { Address } from '@emurgo/cardano-serialization-lib-nodejs';
 import { UtxoData, Networks, SdkApiError } from '../../types/index.js';
 
 const makeBaseAddress = (mainnet: boolean): string => {
@@ -109,5 +115,46 @@ describe('assertRecipientAddress (M-02)', () => {
       expect(e.message).toMatch(/network mismatch/i);
       expect(e.errorInfo).toMatchObject({ expectedNetworkId: 0, actualNetworkId: 1 });
     }
+  });
+});
+
+// The fee returned by the convergence loop must equal the fee encoded
+// in the returned transaction body. The sensitive case is a change output
+// near a CBOR integer-width boundary (2^32 lovelace, ~4295 ADA), where the
+// coin encoding grows between iterations.
+describe('buildAdaTransactionWithCalculatedFee - M-10 fee/body consistency', () => {
+  const buildAt = (totalInputLovelace: number) => {
+    const sender = Address.from_bech32(makeBaseAddress(false));
+    const recipient = Address.from_bech32(makeBaseAddress(false));
+    const utxo = makeUtxo({ value: { lovelace: totalInputLovelace, assets: {} } });
+    const txInputs = createTransactionInputs([utxo]);
+    const result = buildAdaTransactionWithCalculatedFee(
+      {
+        lovelaceAmount: 1_000_000,
+        recipientAddress: recipient,
+        senderAddress: sender,
+        selectedUtxos: [utxo],
+      },
+      txInputs,
+      1_000_000,
+      1
+    );
+    sender.free();
+    recipient.free();
+    return result;
+  };
+
+  it('reported fee equals the fee encoded in the body (ordinary amounts)', () => {
+    const { fee, txBody } = buildAt(10_000_000);
+    expect(Number(txBody.fee().to_str())).toBe(fee);
+  });
+
+  it('reported fee equals the body fee when change crosses the 2^32 CBOR boundary', () => {
+    // Change at the 200000 initial fee estimate sits just under 2^32; at the
+    // converged (~168k) fee it crosses above, growing the coin encoding by
+    // 4 bytes (+176 lovelace at minFeeA=44) - the divergence window.
+    const totalInput = 2 ** 32 - 1_000 + 1_000_000 + 200_000;
+    const { fee, txBody } = buildAt(totalInput);
+    expect(Number(txBody.fee().to_str())).toBe(fee);
   });
 });

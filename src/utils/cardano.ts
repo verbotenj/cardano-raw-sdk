@@ -172,10 +172,7 @@ export const isSpendableUtxo = (utxo: UtxoData): boolean => {
  * Parses a bech32 Cardano address and asserts it is on the expected network.
  * Throws SdkApiError on parse failure or network mismatch.
  */
-export const assertRecipientAddress = (
-  recipientAddress: string,
-  network: Networks
-): void => {
+export const assertRecipientAddress = (recipientAddress: string, network: Networks): void => {
   let parsed;
   try {
     parsed = Address.from_bech32(recipientAddress);
@@ -218,8 +215,8 @@ export const fetchAndSelectUtxosForCnt = async (params: fetchAndSelectUtxosForCn
   try {
     const rawUtxos = await fetchUtxos(iagonApiService, address);
     const utxos = rawUtxos.filter(
-    (u) => !utxoLocks.isLocked(u.transaction_id, u.output_index) && isSpendableUtxo(u)
-  );
+      (u) => !utxoLocks.isLocked(u.transaction_id, u.output_index) && isSpendableUtxo(u)
+    );
 
     const tokenUtxosWithAmounts = filterUtxos(utxos, tokenPolicyId, tokenName)
       .map((utxo) => ({
@@ -811,7 +808,18 @@ const convergeTransactionFee = (
 
     if (Math.abs(calculatedFee - currentFee) <= CardanoAmounts.TX_FEE_TOLERANCE) {
       logger.info(`[${label}] fee converged at ${calculatedFee} after ${i + 1} iterations`);
-      return { outputs, fee: calculatedFee, txBody };
+      // Rebuild the body with the converged fee: the body constructed in
+      // this iteration still encodes currentFee, which may differ from
+      // calculatedFee by up to TX_FEE_TOLERANCE. The returned fee must
+      // match the fee encoded in the returned body.
+      const finalOutputs = buildOutputsFn(calculatedFee);
+      const finalTxBody = buildTransaction({
+        txInputs,
+        txOutputs: finalOutputs,
+        fee: calculatedFee,
+        ttl,
+      });
+      return { outputs: finalOutputs, fee: calculatedFee, txBody: finalTxBody };
     }
     currentFee = calculatedFee;
   }
