@@ -1003,9 +1003,9 @@ export class FireblocksCardanoRawSDK {
           500,
           "FeeEstimationError",
           { minRequiredFee, allocatedFee, difference: minRequiredFee - allocatedFee },
-        "FireblocksCardanoRawSDK"
-      );
-    }
+          "FireblocksCardanoRawSDK"
+        );
+      }
 
       const feeDifference = allocatedFee - minRequiredFee;
       this.logger.info(
@@ -1421,6 +1421,10 @@ export class FireblocksCardanoRawSDK {
 
   /**
    * Estimates the fee for a native ADA transfer without signing or submitting.
+   *
+   * **Estimate only.** The actual transfer (`transferAda`) is executed by the
+   * Fireblocks policy engine via `createTransfer`, which builds its own
+   * transaction, so the fee charged on-chain can differ from this preview.
    *
    * @param request - AdaFeeEstimationRequest
    * @returns AdaFeeEstimationResponse with fee breakdown; includes tokenChangeWarning when token UTxOs are consumed
