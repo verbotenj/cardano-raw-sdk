@@ -169,6 +169,26 @@ export const isSpendableUtxo = (utxo: UtxoData): boolean => {
 };
 
 /**
+ * Filters a UTxO set down to the ones spendable with a simple Ed25519
+ * witness, logging a count when value is excluded so a balance that
+ * selection cannot reach is visible to the operator rather than silently
+ * stranded.
+ *
+ * @param utxos   - Candidate UTxOs
+ * @param context - Short label for the log message (e.g. "ADA", "consolidation")
+ */
+export const filterSpendableUtxos = (utxos: UtxoData[], context: string): UtxoData[] => {
+  const spendable = utxos.filter(isSpendableUtxo);
+  const excluded = utxos.length - spendable.length;
+  if (excluded > 0) {
+    logger.warn(
+      `[${context}] excluded ${excluded} UTxO(s) carrying a datum_hash or script_hash from selection`
+    );
+  }
+  return spendable;
+};
+
+/**
  * Parses a bech32 Cardano address and asserts it is on the expected network.
  * Throws SdkApiError on parse failure or network mismatch.
  */
@@ -214,8 +234,8 @@ export const fetchAndSelectUtxosForCnt = async (params: fetchAndSelectUtxosForCn
   } = params;
   try {
     const rawUtxos = await fetchUtxos(iagonApiService, address);
-    const utxos = rawUtxos.filter(
-      (u) => !utxoLocks.isLocked(u.transaction_id, u.output_index) && isSpendableUtxo(u)
+    const utxos = filterSpendableUtxos(rawUtxos, "CNT").filter(
+      (u) => !utxoLocks.isLocked(u.transaction_id, u.output_index)
     );
 
     const tokenUtxosWithAmounts = filterUtxos(utxos, tokenPolicyId, tokenName)
@@ -859,8 +879,8 @@ export const fetchAndSelectUtxosForAda = async (
   const { iagonApiService, address, lovelaceAmount, transactionFee, lock = false } = params;
 
   const rawUtxos = await fetchUtxos(iagonApiService, address);
-  const utxos = rawUtxos.filter(
-    (u) => !utxoLocks.isLocked(u.transaction_id, u.output_index) && isSpendableUtxo(u)
+  const utxos = filterSpendableUtxos(rawUtxos, "ADA").filter(
+    (u) => !utxoLocks.isLocked(u.transaction_id, u.output_index)
   );
   if (!utxos || utxos.length === 0) {
     throw new Error(`No UTxOs found for address: ${address}`);
@@ -1040,8 +1060,8 @@ export const fetchAndSelectUtxosForMultiToken = async (
   const { iagonApiService, address, tokens, transactionFee, lovelaceAmount, lock = false } = params;
 
   const rawUtxos = await fetchUtxos(iagonApiService, address);
-  const utxos = rawUtxos.filter(
-    (u) => !utxoLocks.isLocked(u.transaction_id, u.output_index) && isSpendableUtxo(u)
+  const utxos = filterSpendableUtxos(rawUtxos, "multi-token").filter(
+    (u) => !utxoLocks.isLocked(u.transaction_id, u.output_index)
   );
   if (!utxos || utxos.length === 0) {
     throw new Error(`No UTxOs found for address: ${address}`);

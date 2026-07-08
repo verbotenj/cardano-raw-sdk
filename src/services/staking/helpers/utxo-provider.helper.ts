@@ -9,7 +9,7 @@ import {
   UtxoForStaking,
   formatWithDecimals,
   utxoLocks,
-  isSpendableUtxo,
+  filterSpendableUtxos,
 } from "../../../utils/index.js";
 import { SdkApiError } from "../../../types/index.js";
 import { FireblocksService, IagonApiService } from "../../index.js";
@@ -89,8 +89,8 @@ export class UtxoProvider implements IUtxoProvider {
 
     // Filter out locked UTXOs (double-spend prevention) and script/datum
     // UTXOs which cannot be spent with a simple Ed25519 witness.
-    const availableUtxos = utxosResponse.data.filter(
-      (u) => !utxoLocks.isLocked(u.transaction_id, u.output_index) && isSpendableUtxo(u)
+    const availableUtxos = filterSpendableUtxos(utxosResponse.data, "staking").filter(
+      (u) => !utxoLocks.isLocked(u.transaction_id, u.output_index)
     );
 
     if (availableUtxos.length === 0) {
