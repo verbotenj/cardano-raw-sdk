@@ -183,31 +183,38 @@ export const buildDelegationCertificate = (
   poolId: string
 ): CardanoWasm.Certificate => {
   assertCredLen(credential, "buildDelegationCertificate");
-  const credentialHash = CardanoWasm.Ed25519KeyHash.from_bytes(credential);
-  const stakeCredential = CardanoWasm.Credential.from_keyhash(credentialHash);
-  credentialHash.free();
 
-  // Handle both bech32 (pool1...) and hex formats
-  let poolIdHex: string;
-  if (poolId.startsWith("pool")) {
-    // Decode bech32 pool ID to hex
-    const decoded = bech32.decode(poolId, 1000);
-    const words = decoded.words;
-    const bytes = bech32.fromWords(words);
-    poolIdHex = Buffer.from(bytes).toString("hex");
-  } else {
-    // Already in hex format
-    poolIdHex = poolId;
+  // WASM handles must be freed even when a decode throws mid-build.
+  let credentialHash: CardanoWasm.Ed25519KeyHash | null = null;
+  let stakeCredential: CardanoWasm.Credential | null = null;
+  let poolKeyHash: CardanoWasm.Ed25519KeyHash | null = null;
+  let stakeDelegation: CardanoWasm.StakeDelegation | null = null;
+  try {
+    credentialHash = CardanoWasm.Ed25519KeyHash.from_bytes(credential);
+    stakeCredential = CardanoWasm.Credential.from_keyhash(credentialHash);
+
+    // Handle both bech32 (pool1...) and hex formats
+    let poolIdHex: string;
+    if (poolId.startsWith("pool")) {
+      // Decode bech32 pool ID to hex
+      const decoded = bech32.decode(poolId, 1000);
+      const words = decoded.words;
+      const bytes = bech32.fromWords(words);
+      poolIdHex = Buffer.from(bytes).toString("hex");
+    } else {
+      // Already in hex format
+      poolIdHex = poolId;
+    }
+
+    poolKeyHash = CardanoWasm.Ed25519KeyHash.from_hex(poolIdHex);
+    stakeDelegation = CardanoWasm.StakeDelegation.new(stakeCredential, poolKeyHash);
+    return CardanoWasm.Certificate.new_stake_delegation(stakeDelegation);
+  } finally {
+    stakeDelegation?.free();
+    poolKeyHash?.free();
+    stakeCredential?.free();
+    credentialHash?.free();
   }
-
-  const poolKeyHash = CardanoWasm.Ed25519KeyHash.from_hex(poolIdHex);
-  const stakeDelegation = CardanoWasm.StakeDelegation.new(stakeCredential, poolKeyHash);
-  stakeCredential.free();
-  poolKeyHash.free();
-
-  const cert = CardanoWasm.Certificate.new_stake_delegation(stakeDelegation);
-  stakeDelegation.free();
-  return cert;
 };
 
 /**
