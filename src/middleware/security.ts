@@ -14,6 +14,22 @@
 import type { Express, Request, Response, NextFunction } from "express";
 import rateLimit from "express-rate-limit";
 import cors from "cors";
+import { timingSafeEqual } from "crypto";
+import { Logger } from "../utils/index.js";
+
+const logger = new Logger("security-middleware");
+
+/**
+ * Compare a provided API key against the configured key in constant time,
+ * so response timing does not leak how many leading characters matched.
+ */
+const isValidApiKey = (provided: unknown, expected: string): boolean => {
+  if (typeof provided !== "string") return false;
+  const providedBuf = Buffer.from(provided);
+  const expectedBuf = Buffer.from(expected);
+  if (providedBuf.length !== expectedBuf.length) return false;
+  return timingSafeEqual(providedBuf, expectedBuf);
+};
 
 export interface SecurityConfig {
   maxBodySize: string;
@@ -50,6 +66,22 @@ const getConfig = (): SecurityConfig => ({
 export const applySecurityMiddleware = (app: Express): void => {
   const config = getConfig();
 
+  // Auth is opt-in, so misconfiguration must never fail open silently.
+  if (config.apiKeyEnabled && !config.apiKey) {
+    throw new Error(
+      "API_KEY_ENABLED=true but API_KEY is empty or unset. " +
+        "Refusing to start with authentication silently disabled: " +
+        "set a non-empty API_KEY, or set API_KEY_ENABLED=false to run without auth."
+    );
+  }
+  if (!config.apiKeyEnabled) {
+    logger.warn(
+      "Server starting WITHOUT API key auth: every endpoint is unauthenticated. " +
+        "Set API_KEY_ENABLED=true and API_KEY to enable authentication. " +
+        "Only run without auth on a trusted, isolated network."
+    );
+  }
+
   // CORS configuration
   app.use(
     cors({
@@ -75,6 +107,7 @@ export const applySecurityMiddleware = (app: Express): void => {
 
   // Optional API key authentication
   if (config.apiKeyEnabled && config.apiKey) {
+    const apiKey = config.apiKey;
     app.use((req: Request, res: Response, next: NextFunction) => {
       // Skip auth for health check and documentation endpoints
       const publicPaths = ["/health", "/api-docs", "/docs"];
@@ -83,7 +116,7 @@ export const applySecurityMiddleware = (app: Express): void => {
       }
 
       const providedKey = req.headers["x-api-key"];
-      if (providedKey !== config.apiKey) {
+      if (!isValidApiKey(providedKey, apiKey)) {
         return res.status(401).json({
           success: false,
           error: "Invalid or missing API key",
