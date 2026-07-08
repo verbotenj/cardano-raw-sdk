@@ -60,12 +60,15 @@ export class StakingValidator implements IStakingValidator {
         "staking-service"
       );
     }
-    if (poolInfo.data.retirement && poolInfo.data.retirement.length > 0) {
+    // The Iagon pool-info contract reports retirement as a status field
+    // ("active" | "retiring" | "retired") plus retiring_epoch.
+    const { status, retiring_epoch } = poolInfo.data;
+    if (status === "retiring" || status === "retired") {
       throw new SdkApiError(
-        `Pool ${poolId} has filed a retirement certificate and cannot accept new delegations`,
+        `Pool ${poolId} is ${status} and cannot accept new delegations`,
         400,
         "PoolRetired",
-        { poolId, retirement: poolInfo.data.retirement },
+        { poolId, status, retiringEpoch: retiring_epoch },
         "staking-service"
       );
     }

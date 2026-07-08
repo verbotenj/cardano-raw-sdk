@@ -71,3 +71,72 @@ describe('StakingValidator.checkRegistrationStatus - H-2', () => {
     await expect(v.checkRegistrationStatus('vault-1')).rejects.toBeInstanceOf(TypeError);
   });
 });
+
+// The Iagon pool-info response reports retirement via a `status` field
+// ("active" | "retiring" | "retired") plus `retiring_epoch`. Delegation to a
+// retiring or retired pool must be rejected with PoolRetired.
+
+const makeDelegationValidator = (
+  poolData: Record<string, unknown> | null
+): StakingValidator => {
+  const addressResolver = {
+    getStakeAddress: jest.fn(async (_id: string) => 'stake_test1abc'),
+  };
+  const iagon = {
+    getStakeAccountInfo: jest.fn(async () => ({ data: { active: true, pool_id: null } })),
+    getPoolInfo: jest.fn(async () => ({ success: true, data: poolData })),
+  };
+  const logger = new Logger('test:staking-validator');
+  return new StakingValidator(
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    iagon as any,
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    addressResolver as any,
+    logger
+  );
+};
+
+describe('StakingValidator.validateDelegationPrerequisites - M-15 pool retirement', () => {
+  const poolId = 'pool1testpool';
+
+  it('rejects delegation to a pool with status "retiring"', async () => {
+    const v = makeDelegationValidator({
+      pool_id: poolId,
+      status: 'retiring',
+      retiring_epoch: 300,
+    });
+    await expect(v.validateDelegationPrerequisites('vault-1', poolId)).rejects.toMatchObject({
+      errorType: 'PoolRetired',
+      statusCode: 400,
+    });
+  });
+
+  it('rejects delegation to a pool with status "retired"', async () => {
+    const v = makeDelegationValidator({
+      pool_id: poolId,
+      status: 'retired',
+      retiring_epoch: 295,
+    });
+    await expect(v.validateDelegationPrerequisites('vault-1', poolId)).rejects.toMatchObject({
+      errorType: 'PoolRetired',
+      statusCode: 400,
+    });
+  });
+
+  it('allows delegation to a pool with status "active"', async () => {
+    const v = makeDelegationValidator({
+      pool_id: poolId,
+      status: 'active',
+      retiring_epoch: null,
+    });
+    await expect(v.validateDelegationPrerequisites('vault-1', poolId)).resolves.toBeUndefined();
+  });
+
+  it('still rejects an unknown pool with PoolNotFound', async () => {
+    const v = makeDelegationValidator(null);
+    await expect(v.validateDelegationPrerequisites('vault-1', poolId)).rejects.toMatchObject({
+      errorType: 'PoolNotFound',
+      statusCode: 404,
+    });
+  });
+});
