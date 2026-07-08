@@ -31,6 +31,7 @@ import {
   setProtocolParams,
   assertRecipientAddress,
   assertTxSizeWithinLimit,
+  filterSpendableUtxos,
 } from "./utils/index.js";
 
 import {
@@ -313,24 +314,32 @@ export class FireblocksCardanoRawSDK {
       return this.getEmptyVaultBalance(groupBy);
     }
 
-    // Fetch balances for all addresses in parallel
-    const balancePromises = addresses
-      .filter((addrData) => addrData.address && addrData.addressFormat === "BASE") // Filter out addresses without an address field / non-base addresses
-      .map(async (addrData) => {
-        const address = addrData.address!;
-        const index = addrData.bip44AddressIndex || 0;
+    // Fetch balances for all addresses in parallel. Only BASE addresses are
+    // in scope; dropped addresses are logged so the balance view is not
+    // silently narrower than the address list.
+    const baseAddresses = addresses.filter(
+      (addrData) => addrData.address && addrData.addressFormat === "BASE"
+    );
+    if (baseAddresses.length < addresses.length) {
+      this.logger.warn(
+        `getVaultBalance: dropped ${addresses.length - baseAddresses.length} non-BASE address(es) from the balance view`
+      );
+    }
+    const balancePromises = baseAddresses.map(async (addrData) => {
+      const address = addrData.address!;
+      const index = addrData.bip44AddressIndex || 0;
 
-        try {
-          const balance = await this.iagonApiService.getBalanceByAddress({
-            address,
-            groupByPolicy: groupBy === GroupByOptions.POLICY,
-          });
-          return { address, index, balance };
-        } catch (error) {
-          this.logger.error(`Error fetching balance for address ${address}:`, error);
-          return { address, index, balance: null };
-        }
-      });
+      try {
+        const balance = await this.iagonApiService.getBalanceByAddress({
+          address,
+          groupByPolicy: groupBy === GroupByOptions.POLICY,
+        });
+        return { address, index, balance };
+      } catch (error) {
+        this.logger.error(`Error fetching balance for address ${address}:`, error);
+        return { address, index, balance: null };
+      }
+    });
 
     const results = await Promise.all(balancePromises);
 
@@ -720,6 +729,11 @@ export class FireblocksCardanoRawSDK {
     );
 
     const addresses = allAddresses.filter((addr) => addr.address && addr.addressFormat === "BASE");
+    if (addresses.length < allAddresses.length) {
+      this.logger.warn(
+        `getUtxosByVaultAccountId: dropped ${allAddresses.length - addresses.length} non-BASE address(es) from the UTxO view`
+      );
+    }
 
     this.logger.info(
       `Getting UTxOs for all ${addresses.length} BASE addresses in vault ${this.vaultAccountId}`
@@ -1853,7 +1867,7 @@ export class FireblocksCardanoRawSDK {
     this.logger.info(`Consolidating UTxOs at address index ${index}: ${senderAddress}`);
 
     const rawUtxos = await fetchUtxos(this.iagonApiService, senderAddress);
-    const initialUtxos = rawUtxos.filter(
+    const initialUtxos = filterSpendableUtxos(rawUtxos, "consolidation").filter(
       (u) => !utxoLocks.isLocked(u.transaction_id, u.output_index)
     );
 
@@ -1944,8 +1958,12 @@ export class FireblocksCardanoRawSDK {
     let partialError: string | undefined;
 
     for (let batchNum = 0; batchNum < maxBatches; batchNum++) {
-      // re-fetch UTxOs after each batch to get fresh state
-      const utxos = await fetchUtxos(this.iagonApiService, senderAddress);
+      // re-fetch UTxOs after each batch to get fresh state, applying the
+      // same spendability and lock filters as the single-batch path
+      const rawUtxos = await fetchUtxos(this.iagonApiService, senderAddress);
+      const utxos = filterSpendableUtxos(rawUtxos, "consolidation-batch").filter(
+        (u) => !utxoLocks.isLocked(u.transaction_id, u.output_index)
+      );
 
       // stop if we've consolidated enough (only 1 UTxO left or below threshold)
       if (utxos.length < minUtxoCount) {
