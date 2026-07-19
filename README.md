@@ -799,22 +799,23 @@ Copy `.env.example` to `.env` and fill in your values:
 cp .env.example .env
 ```
 
-| Variable                              | Required | Default                     | Description                                                    |
-| ------------------------------------- | -------- | --------------------------- | -------------------------------------------------------------- |
-| `PORT`                                | No       | `8000`                      | HTTP server port                                               |
-| `NODE_ENV`                            | No       | `production`                | Set to `development` only when using self-signed certs locally |
-| `FIREBLOCKS_API_USER_KEY`             | Yes      | -                           | Fireblocks API key UUID                                        |
-| `FIREBLOCKS_API_USER_SECRET_KEY_PATH` | Yes      | -                           | Absolute path to the Fireblocks RSA secret key file            |
-| `FIREBLOCKS_BASE_PATH`                | No       | `https://api.fireblocks.io` | Fireblocks workspace URL - also controls webhook JWKS region   |
-| `IAGON_API_KEY`                       | Yes      | -                           | Iagon API key for blockchain data queries                      |
+| Variable                              | Required | Default                                     | Description                                                     |
+| ------------------------------------- | -------- | ------------------------------------------- | --------------------------------------------------------------- |
+| `PORT`                                | No       | `8000`                                      | HTTP server port                                                |
+| `NODE_ENV`                            | No       | `production`                                | Set to `development` only when using self-signed certs locally  |
+| `FIREBLOCKS_API_USER_KEY`             | Yes      | -                                           | Fireblocks API key UUID                                         |
+| `FIREBLOCKS_API_USER_SECRET_KEY_PATH` | Yes      | -                                           | Absolute path to the Fireblocks RSA secret key file             |
+| `FIREBLOCKS_BASE_PATH`                | No       | `https://api.fireblocks.io`                 | Fireblocks workspace URL - also controls webhook JWKS region    |
+| `IAGON_API_KEY`                       | Yes      | -                                           | Iagon API key for blockchain data queries                       |
 | `IAGON_BASE_URL`                      | No       | `https://api.fireblocks.partners.iagon.com` | Override the Iagon API base URL (staging / private deployments) |
-| `CARDANO_NETWORK`                     | No       | `mainnet`                   | `mainnet` or `preprod`                                         |
-| `MAX_BODY_SIZE`                       | No       | `1mb`                       | Maximum request body size                                      |
-| `RATE_LIMIT_WINDOW_MS`                | No       | `900000`                    | Rate limit time window (ms)                                    |
-| `RATE_LIMIT_MAX_REQUESTS`             | No       | `100`                       | Max requests per rate limit window                             |
-| `CORS_ORIGINS`                        | No       | `*`                         | Allowed CORS origins (comma-separated)                         |
-| `API_KEY_ENABLED`                     | No       | `false`                     | Enable API key authentication                                  |
-| `API_KEY`                             | No       | -                           | API key value (required if `API_KEY_ENABLED=true`)             |
+| `CARDANO_NETWORK`                     | No       | `mainnet`                                   | `mainnet` or `preprod`                                          |
+| `MAX_BODY_SIZE`                       | No       | `1mb`                                       | Maximum request body size                                       |
+| `RATE_LIMIT_WINDOW_MS`                | No       | `900000`                                    | Rate limit time window (ms)                                     |
+| `RATE_LIMIT_MAX_REQUESTS`             | No       | `100`                                       | Max requests per rate limit window                              |
+| `TRUST_PROXY`                         | No       | `false`                                     | Express `trust proxy` setting (hop count, preset, or boolean)   |
+| `CORS_ORIGINS`                        | No       | `*`                                         | Allowed CORS origins (comma-separated)                          |
+| `API_KEY_ENABLED`                     | No       | `false`                                     | Enable API key authentication                                   |
+| `API_KEY`                             | No       | -                                           | API key value (required if `API_KEY_ENABLED=true`)              |
 
 **Fireblocks base path options:**
 
@@ -869,14 +870,15 @@ export FIREBLOCKS_API_USER_SECRET_KEY=$(cat key.b64)
 
 The API server includes configurable security middleware for CORS, rate limiting, and optional API key authentication. All settings are configured via environment variables.
 
-| Variable | Default | Description |
-|----------|---------|-------------|
-| `MAX_BODY_SIZE` | `1mb` | Maximum request body size (e.g., `1mb`, `500kb`) |
-| `RATE_LIMIT_WINDOW_MS` | `900000` | Rate limiting time window in milliseconds (default: 15 minutes) |
-| `RATE_LIMIT_MAX_REQUESTS` | `100` | Maximum requests allowed per window |
-| `CORS_ORIGINS` | `*` | Allowed CORS origins. Use `*` for all, or comma-separated list (e.g., `https://app.example.com,https://admin.example.com`) |
-| `API_KEY_ENABLED` | `false` | Enable API key authentication |
-| `API_KEY` | - | Required API key value when `API_KEY_ENABLED=true` |
+| Variable                  | Default  | Description                                                                                                                    |
+| ------------------------- | -------- | ------------------------------------------------------------------------------------------------------------------------------ |
+| `MAX_BODY_SIZE`           | `1mb`    | Maximum request body size (e.g., `1mb`, `500kb`)                                                                               |
+| `RATE_LIMIT_WINDOW_MS`    | `900000` | Rate limiting time window in milliseconds (default: 15 minutes)                                                                |
+| `RATE_LIMIT_MAX_REQUESTS` | `100`    | Maximum requests allowed per window                                                                                            |
+| `TRUST_PROXY`             | `false`  | Express `trust proxy` setting: number of reverse-proxy hops (e.g., `1`), a preset/subnet (`loopback`, `10.0.0.0/8`), or `true` |
+| `CORS_ORIGINS`            | `*`      | Allowed CORS origins. Use `*` for all, or comma-separated list (e.g., `https://app.example.com,https://admin.example.com`)     |
+| `API_KEY_ENABLED`         | `false`  | Enable API key authentication                                                                                                  |
+| `API_KEY`                 | -        | Required API key value when `API_KEY_ENABLED=true`                                                                             |
 
 #### CORS Configuration
 
@@ -902,9 +904,26 @@ RATE_LIMIT_WINDOW_MS=300000
 RATE_LIMIT_MAX_REQUESTS=50
 ```
 
+#### Running Behind a Reverse Proxy
+
+When the server runs behind a reverse proxy (nginx, AWS ALB, Docker ingress), set `TRUST_PROXY` to the number of proxy hops so rate limiting keys on the client IP rather than the proxy's:
+
+```bash
+# One proxy hop (single nginx or load balancer)
+TRUST_PROXY=1
+
+# Two hops (e.g., CDN in front of nginx)
+TRUST_PROXY=2
+
+# Only trust proxies on the local machine
+TRUST_PROXY=loopback
+```
+
+The proxy must forward the client address via the `X-Forwarded-For` header (nginx: `proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;`; managed load balancers do this automatically). With the default `TRUST_PROXY=false`, requests arriving through a proxy are rate-limited by the proxy's address, so all clients share one limit bucket.
+
 #### API Key Authentication
 
-When enabled, all requests (except `/health`, `/api-docs`, `/docs`) require the `X-API-Key` header.
+When enabled, all requests require the `X-API-Key` header, except `/health`, `/api-docs`, `/docs`, and `/api/webhook` (authenticated by Fireblocks signature verification instead).
 
 ```bash
 # Enable API key authentication
@@ -922,13 +941,13 @@ curl -H "X-API-Key: your-secret-api-key-here" http://localhost:8000/api/balance/
 
 Cardano protocol parameters can be overridden at SDK initialization. This is useful when protocol parameters change at hard forks, allowing you to update without waiting for an SDK release.
 
-| Parameter | Default | Description |
-|-----------|---------|-------------|
-| `minFeeA` | `44` | Fee coefficient: lovelace per transaction byte |
-| `minFeeB` | `155381` | Fee constant: base lovelace fee |
-| `coinsPerUtxoByte` | `4310` | Lovelace per UTxO byte for min-ADA calculations |
-| `stakeKeyDeposit` | `2000000` | Stake key registration deposit (2 ADA) |
-| `drepDeposit` | `500000000` | DRep registration deposit (500 ADA) |
+| Parameter          | Default     | Description                                     |
+| ------------------ | ----------- | ----------------------------------------------- |
+| `minFeeA`          | `44`        | Fee coefficient: lovelace per transaction byte  |
+| `minFeeB`          | `155381`    | Fee constant: base lovelace fee                 |
+| `coinsPerUtxoByte` | `4310`      | Lovelace per UTxO byte for min-ADA calculations |
+| `stakeKeyDeposit`  | `2000000`   | Stake key registration deposit (2 ADA)          |
+| `drepDeposit`      | `500000000` | DRep registration deposit (500 ADA)             |
 
 #### SDK Usage
 
@@ -947,7 +966,7 @@ const sdk = await FireblocksCardanoRawSDK.createInstance({
     coinsPerUtxoByte: 4310,
     stakeKeyDeposit: 2_000_000,
     drepDeposit: 500_000_000,
-  }
+  },
 });
 ```
 

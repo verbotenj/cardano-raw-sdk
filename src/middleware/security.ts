@@ -38,7 +38,20 @@ export interface SecurityConfig {
   corsOrigins: string | string[];
   apiKeyEnabled: boolean;
   apiKey?: string;
+  trustProxy: boolean | number | string;
 }
+
+/**
+ * Parse the TRUST_PROXY environment variable into the value Express
+ * expects for the "trust proxy" setting: a boolean, a hop count, or a
+ * preset/subnet string (e.g. "loopback", "10.0.0.0/8").
+ */
+const parseTrustProxy = (value: string | undefined): boolean | number | string => {
+  if (value === undefined || value === "" || value === "false") return false;
+  if (value === "true") return true;
+  const hops = Number(value);
+  return Number.isInteger(hops) && hops >= 0 ? hops : value;
+};
 
 /**
  * Load security configuration from environment variables.
@@ -51,6 +64,7 @@ const getConfig = (): SecurityConfig => ({
   corsOrigins: process.env.CORS_ORIGINS ? process.env.CORS_ORIGINS.split(",") : "*",
   apiKeyEnabled: process.env.API_KEY_ENABLED === "true",
   apiKey: process.env.API_KEY,
+  trustProxy: parseTrustProxy(process.env.TRUST_PROXY),
 });
 
 /**
@@ -82,6 +96,10 @@ export const applySecurityMiddleware = (app: Express): void => {
     );
   }
 
+  // Required for req.ip (and rate-limit keying) to resolve to the
+  // client address when the server runs behind a reverse proxy.
+  app.set("trust proxy", config.trustProxy);
+
   // CORS configuration
   app.use(
     cors({
@@ -102,6 +120,9 @@ export const applySecurityMiddleware = (app: Express): void => {
       legacyHeaders: false,
       // Skip rate limiting for health checks
       skip: (req: Request) => req.path === "/health",
+      // An X-Forwarded-For header from an undeclared proxy must fall
+      // back to socket-address keying rather than fail the request.
+      validate: { xForwardedForHeader: false },
     })
   );
 

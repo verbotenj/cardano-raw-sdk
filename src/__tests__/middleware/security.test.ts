@@ -7,12 +7,13 @@ import { applySecurityMiddleware } from "../../middleware/security.js";
 // misconfiguration, and starting with auth disabled emits an explicit
 // warning.
 
-const makeApp = (): { app: Express; use: jest.Mock } => {
+const makeApp = (): { app: Express; use: jest.Mock; set: jest.Mock } => {
   const use = jest.fn();
-  return { app: { use } as unknown as Express, use };
+  const set = jest.fn();
+  return { app: { use, set } as unknown as Express, use, set };
 };
 
-const ENV_KEYS = ["API_KEY_ENABLED", "API_KEY"];
+const ENV_KEYS = ["API_KEY_ENABLED", "API_KEY", "TRUST_PROXY"];
 let savedEnv: Record<string, string | undefined>;
 
 beforeEach(() => {
@@ -128,6 +129,37 @@ describe("applySecurityMiddleware - API key comparison", () => {
     auth(req, res, next as NextFunction);
     expect(next).not.toHaveBeenCalled();
     expect(status).toHaveBeenCalledWith(401);
+  });
+});
+
+describe("applySecurityMiddleware - trust proxy configuration", () => {
+  // Express must be told the proxy depth for req.ip (and rate-limit
+  // keying) to resolve to the client address rather than the proxy's.
+  it("defaults trust proxy to false when TRUST_PROXY is unset", () => {
+    const { app, set } = makeApp();
+    applySecurityMiddleware(app);
+    expect(set).toHaveBeenCalledWith("trust proxy", false);
+  });
+
+  it("sets trust proxy to true for TRUST_PROXY=true", () => {
+    process.env.TRUST_PROXY = "true";
+    const { app, set } = makeApp();
+    applySecurityMiddleware(app);
+    expect(set).toHaveBeenCalledWith("trust proxy", true);
+  });
+
+  it("sets a numeric hop count for TRUST_PROXY=2", () => {
+    process.env.TRUST_PROXY = "2";
+    const { app, set } = makeApp();
+    applySecurityMiddleware(app);
+    expect(set).toHaveBeenCalledWith("trust proxy", 2);
+  });
+
+  it("passes preset/subnet strings through for TRUST_PROXY=loopback", () => {
+    process.env.TRUST_PROXY = "loopback";
+    const { app, set } = makeApp();
+    applySecurityMiddleware(app);
+    expect(set).toHaveBeenCalledWith("trust proxy", "loopback");
   });
 });
 
