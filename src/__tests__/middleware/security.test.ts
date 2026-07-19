@@ -2,10 +2,10 @@ import { describe, it, expect, jest, beforeEach, afterEach } from "@jest/globals
 import type { Express, Request, Response, NextFunction } from "express";
 import { applySecurityMiddleware } from "../../middleware/security.js";
 
-// Auth is opt-in, so a misconfigured server must not fail open
-// silently. API_KEY_ENABLED=true with an empty key is a fatal
-// misconfiguration, and starting with auth disabled must log a loud
-// warning so the operator gets a signal.
+// API key auth is opt-in. To prevent the server from silently failing
+// open, API_KEY_ENABLED=true with an empty key is treated as a fatal
+// misconfiguration, and starting with auth disabled emits an explicit
+// warning.
 
 const makeApp = (): { app: Express; use: jest.Mock } => {
   const use = jest.fn();
@@ -125,6 +125,52 @@ describe("applySecurityMiddleware - API key comparison", () => {
     applySecurityMiddleware(app);
     const auth = getAuthMiddleware(use);
     const { req, res, next, status } = makeReqRes(undefined);
+    auth(req, res, next as NextFunction);
+    expect(next).not.toHaveBeenCalled();
+    expect(status).toHaveBeenCalledWith(401);
+  });
+});
+
+describe("applySecurityMiddleware - webhook exemption from API key auth", () => {
+  // Fireblocks webhook requests carry only signature headers and cannot
+  // include X-API-Key, so the webhook path is exempt from API key auth.
+  // Webhook requests are instead authenticated via signature verification
+  // in the controller (M-01).
+  const getAuthMiddleware = (
+    use: jest.Mock
+  ): ((req: Request, res: Response, next: NextFunction) => unknown) => {
+    const lastCall = use.mock.calls[use.mock.calls.length - 1];
+    return lastCall[0] as (req: Request, res: Response, next: NextFunction) => unknown;
+  };
+
+  const makeReqRes = (path: string) => {
+    const req = { path, headers: {} } as unknown as Request;
+    const status = jest.fn().mockReturnThis();
+    const json = jest.fn();
+    const res = { status, json } as unknown as Response;
+    const next = jest.fn();
+    return { req, res, next, status };
+  };
+
+  beforeEach(() => {
+    process.env.API_KEY_ENABLED = "true";
+    process.env.API_KEY = "correct-key";
+  });
+
+  it("lets a webhook request through without an API key", () => {
+    const { app, use } = makeApp();
+    applySecurityMiddleware(app);
+    const auth = getAuthMiddleware(use);
+    const { req, res, next } = makeReqRes("/api/webhook");
+    auth(req, res, next as NextFunction);
+    expect(next).toHaveBeenCalled();
+  });
+
+  it("still requires an API key on paths that merely share the webhook prefix", () => {
+    const { app, use } = makeApp();
+    applySecurityMiddleware(app);
+    const auth = getAuthMiddleware(use);
+    const { req, res, next, status } = makeReqRes("/api/webhook-other");
     auth(req, res, next as NextFunction);
     expect(next).not.toHaveBeenCalled();
     expect(status).toHaveBeenCalledWith(401);

@@ -111,7 +111,14 @@ export const applySecurityMiddleware = (app: Express): void => {
     app.use((req: Request, res: Response, next: NextFunction) => {
       // Skip auth for health check and documentation endpoints
       const publicPaths = ["/health", "/api-docs", "/docs"];
-      if (publicPaths.some((p) => req.path.startsWith(p))) {
+      // Webhook requests carry no X-API-Key header; they are
+      // authenticated by Fireblocks signature verification in the
+      // controller. Matched exactly so sibling paths remain protected.
+      const signatureAuthenticatedPaths = ["/api/webhook"];
+      if (
+        publicPaths.some((p) => req.path.startsWith(p)) ||
+        signatureAuthenticatedPaths.includes(req.path)
+      ) {
         return next();
       }
 
