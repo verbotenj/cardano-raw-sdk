@@ -6,8 +6,9 @@ import {
   serializeWithdrawals,
   buildDRepRegistrationCertificate,
   toCoinBigInt,
+  drepActionToDRepInfo,
 } from '../../utils/staking.utils.js';
-import { Networks } from '../../types/index.js';
+import { Networks, DRepAction, DRepKind } from '../../types/index.js';
 
 /**
  * Helper: build a syntactically valid Shelley-era preprod base address
@@ -202,5 +203,51 @@ describe('buildDRepRegistrationCertificate - M-04 BigInt deposit encoding', () =
     const encoded = Buffer.from(cborEncode(cert));
 
     expect(bufferContainsSequence(encoded, cborUintBytes(500_000_000n))).toBe(true);
+  });
+});
+
+// M-11: a CIP-129 DRep ID (29-byte payload) must carry HRP "drep" and a
+// header byte of exactly 0x22 (key hash) or 0x23 (script hash); any
+// other 29-byte form is malformed and must be rejected, not decoded by
+// the header's low bit.
+describe('decodeDRepId via drepActionToDRepInfo - M-11 strict CIP-129 header', () => {
+  const credential = Buffer.alloc(28, 0x55);
+
+  const encodeDrep = (hrp: string, bytes: Buffer): string =>
+    bech32.encode(hrp, bech32.toWords(bytes), 1000);
+
+  const cip129 = (header: number, hrp = 'drep'): string =>
+    encodeDrep(hrp, Buffer.concat([Buffer.from([header]), credential]));
+
+  const decode = (id: string) => drepActionToDRepInfo(DRepAction.CUSTOM_DREP, id);
+
+  it('decodes a CIP-129 key-hash ID (header 0x22)', () => {
+    const info = decode(cip129(0x22));
+    expect(info.kind).toBe(DRepKind.KEY_HASH);
+    expect(info.keyHash?.equals(credential)).toBe(true);
+  });
+
+  it('decodes a CIP-129 script-hash ID (header 0x23)', () => {
+    const info = decode(cip129(0x23));
+    expect(info.kind).toBe(DRepKind.SCRIPT_HASH);
+    expect(info.keyHash?.equals(credential)).toBe(true);
+  });
+
+  it('rejects a 29-byte payload with an arbitrary odd header (0x21)', () => {
+    expect(() => decode(cip129(0x21))).toThrow(/header/i);
+  });
+
+  it('rejects a 29-byte payload with an arbitrary even header (0x20)', () => {
+    expect(() => decode(cip129(0x20))).toThrow(/header/i);
+  });
+
+  it('rejects a 29-byte payload under the drep_script HRP', () => {
+    expect(() => decode(cip129(0x23, 'drep_script'))).toThrow(/drep_script|CIP-129|HRP/i);
+  });
+
+  it('still decodes a CIP-105 legacy script ID (28-byte drep_script payload)', () => {
+    const info = decode(encodeDrep('drep_script', credential));
+    expect(info.kind).toBe(DRepKind.SCRIPT_HASH);
+    expect(info.keyHash?.equals(credential)).toBe(true);
   });
 });

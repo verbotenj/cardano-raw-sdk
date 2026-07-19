@@ -490,9 +490,21 @@ const decodeDRepId = (drepId: string): { keyHash: Buffer; isScript: boolean } =>
     const fullBytes = Buffer.from(bech32.fromWords(decoded.words));
 
     if (fullBytes.length === DREP_CREDENTIAL_BYTES + 1) {
-      // CIP-129: header 0x22 = key-hash, 0x23 = script-hash
-      const isScript = (fullBytes[0] & 0x01) === 1;
-      return { keyHash: Buffer.from(fullBytes.subarray(1)), isScript };
+      // CIP-129: HRP is always "drep"; the credential type lives in the
+      // header byte, which must be exactly 0x22 (key hash) or 0x23
+      // (script hash).
+      if (decoded.prefix !== "drep") {
+        throw new Error(
+          `Invalid DRep ID: a ${DREP_CREDENTIAL_BYTES + 1}-byte CIP-129 payload requires HRP "drep", got "${decoded.prefix}"`
+        );
+      }
+      const header = fullBytes[0];
+      if (header !== 0x22 && header !== 0x23) {
+        throw new Error(
+          `Invalid DRep ID: CIP-129 header byte must be 0x22 (key hash) or 0x23 (script hash), got 0x${header.toString(16).padStart(2, "0")}`
+        );
+      }
+      return { keyHash: Buffer.from(fullBytes.subarray(1)), isScript: header === 0x23 };
     }
 
     if (fullBytes.length === DREP_CREDENTIAL_BYTES) {

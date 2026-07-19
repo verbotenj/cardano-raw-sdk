@@ -633,6 +633,16 @@ describe('delegateToDRepRequestSchema - M-08 DRep ID validation', () => {
     ).toThrow(z.ZodError);
   });
 
+  it('rejects a 29-byte payload whose header byte is not 0x22/0x23 (M-11)', () => {
+    const invalid = encodeBech32(
+      'drep',
+      Buffer.concat([Buffer.from([0x21]), Buffer.alloc(28, 0x22)])
+    );
+    expect(() =>
+      delegateToDRepRequestSchema.parse({ ...baseValid, drepId: invalid })
+    ).toThrow(z.ZodError);
+  });
+
   it('rejects a bech32 string with an invalid checksum', () => {
     // Corrupt the last char of a valid bech32 string to break the checksum
     const corrupted =

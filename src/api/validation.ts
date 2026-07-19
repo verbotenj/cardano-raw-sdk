@@ -19,9 +19,16 @@ const isValidDrepId = (id: string): boolean => {
     if (decoded.prefix !== "drep" && decoded.prefix !== "drep_script") return false;
     const bytes = bech32.fromWords(decoded.words);
     // CIP-105 = 28 bytes (raw hash); CIP-129 = 29 bytes (header byte + hash).
-    // CIP-129 only uses HRP "drep"; "drep_script" implies CIP-105.
+    // CIP-129 only uses HRP "drep", and its header byte must be exactly
+    // 0x22 (key hash) or 0x23 (script hash) - mirrors decodeDRepId.
     if (bytes.length === 28) return true;
-    if (bytes.length === 29 && decoded.prefix === "drep") return true;
+    if (
+      bytes.length === 29 &&
+      decoded.prefix === "drep" &&
+      (bytes[0] === 0x22 || bytes[0] === 0x23)
+    ) {
+      return true;
+    }
     return false;
   } catch {
     return false;
