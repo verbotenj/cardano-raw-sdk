@@ -16,6 +16,7 @@ import {
   DRepAction,
   BuildPayloadOptions,
   CardanoCertificate,
+  WithdrawalMap,
 } from "../types/index.js";
 import { CardanoAmounts, CardanoConstants } from "../index.js";
 import * as CardanoWasm from "@emurgo/cardano-serialization-lib-nodejs";
@@ -258,14 +259,46 @@ export const buildVoteDelegationCertificate = (credential: Buffer, drep: DRepInf
 };
 
 /**
- * Serialize withdrawals as a map for CBOR encoding
+ * Convert a lovelace amount to BigInt for CBOR encoding as an unsigned
+ * integer (Cardano CDDL coin). Number inputs are rounded to the nearest
+ * integer and must be finite, non-negative, and within the safe integer
+ * range; BigInt inputs must be non-negative. BigInt carries amounts
+ * above 2^53 exactly.
  */
-export const serializeWithdrawals = (
-  withdrawals: CardanoRewardWithdrawal[]
-): Map<Uint8Array, number> => {
-  const withdrawalMap = new Map<Uint8Array, number>();
+export const toCoinBigInt = (value: number | bigint, label: string): bigint => {
+  if (typeof value === "bigint") {
+    if (value < 0n) {
+      throw new Error(`${label} must be a non-negative lovelace amount, got ${value}`);
+    }
+    return value;
+  }
+  if (!Number.isFinite(value)) {
+    throw new Error(`${label} must be a finite lovelace amount, got ${value}`);
+  }
+  const rounded = Math.round(value);
+  if (rounded < 0) {
+    throw new Error(`${label} must be a non-negative lovelace amount, got ${value}`);
+  }
+  if (!Number.isSafeInteger(rounded)) {
+    throw new Error(
+      `${label} exceeds the JS safe integer range (2^53); pass the amount as a BigInt`
+    );
+  }
+  return BigInt(rounded);
+};
+
+/**
+ * Serialize withdrawals as a map for CBOR encoding.
+ * Rewards are carried as BigInt so cbor2 emits CBOR unsigned ints
+ * without JS Number (53-bit) precision loss.
+ */
+export const serializeWithdrawals = (withdrawals: CardanoRewardWithdrawal[]): WithdrawalMap => {
+  const withdrawalMap: WithdrawalMap = new Map();
   for (const withdrawal of withdrawals) {
-    withdrawalMap.set(toUint8Array(withdrawal.certificate), withdrawal.reward);
+    withdrawalMap.set(
+      toUint8Array(withdrawal.certificate),
+      toCoinBigInt(withdrawal.reward, "withdrawal reward")
+    );
   }
   return withdrawalMap;
 };
@@ -314,8 +347,8 @@ export const buildPayload = (
 
   // Encode lovelace amounts as BigInt so cbor2 emits CBOR unsigned ints
   // (major type 0) without risking JS Number (53-bit) precision loss.
-  const netAmount = BigInt(Math.round(options.netAmount));
-  const feeAmount = BigInt(Math.round(options.feeAmount));
+  const netAmount = toCoinBigInt(options.netAmount, "netAmount");
+  const feeAmount = toCoinBigInt(options.feeAmount, "feeAmount");
 
   // Build inputs array
   const inputsArr = txInputs.map((input) => {
@@ -557,7 +590,7 @@ export const buildVotingProcedures = (
  */
 export const buildDRepRegistrationCertificate = (
   credential: Buffer,
-  depositLovelace: number,
+  depositLovelace: number | bigint,
   anchor?: { url: string; dataHash: string }
 ): CborArray => {
   assertCredLen(credential, "buildDRepRegistrationCertificate");
@@ -566,7 +599,7 @@ export const buildDRepRegistrationCertificate = (
   const anchorValue = anchor
     ? [anchor.url, toUint8Array(Buffer.from(anchor.dataHash, "hex"))]
     : null;
-  return [16, drepCredential, depositLovelace, anchorValue];
+  return [16, drepCredential, toCoinBigInt(depositLovelace, "DRep deposit"), anchorValue];
 };
 
 /**

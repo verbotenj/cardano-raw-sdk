@@ -41,6 +41,7 @@ import {
   StakingOperation,
   SdkApiError,
   DRepAction,
+  WithdrawalMap,
 } from "../../types/index.js";
 
 import {
@@ -676,7 +677,7 @@ export class StakingService {
     netAmount: number;
     fee: number;
     certificates?: Array<unknown>;
-    withdrawals?: Map<Uint8Array, number>;
+    withdrawals?: WithdrawalMap;
     votingProcedures?: Map<unknown, unknown>;
     operation: string;
     skipValidation?: boolean;
@@ -831,7 +832,7 @@ export class StakingService {
     netAmount: number;
     fee: number;
     certificates?: Array<unknown>;
-    withdrawals?: Map<Uint8Array, number>;
+    withdrawals?: WithdrawalMap;
     votingProcedures?: Map<unknown, unknown>;
     operation: string;
     skipValidation?: boolean;

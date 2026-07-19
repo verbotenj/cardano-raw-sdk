@@ -8,6 +8,7 @@ import {
   SupportedAssets,
   CardanoWitness,
   TransferResponse,
+  WithdrawalMap,
 } from "../../../types/index.js";
 import { UtxoForStaking } from "../../../utils/staking.utils.js";
 
@@ -86,7 +87,7 @@ export interface TransactionBuildContext {
   readonly fee: number;
   readonly ttl?: number; // Optional for Conway-era governance transactions
   readonly certificates?: Array<unknown>;
-  readonly withdrawals?: Map<Uint8Array, number>;
+  readonly withdrawals?: WithdrawalMap;
   /** Conway-era voting procedures (key 19 in the TX body) */
   readonly votingProcedures?: Map<unknown, unknown>;
   readonly network: Networks;

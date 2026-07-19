@@ -1,6 +1,12 @@
 import { describe, it, expect } from '@jest/globals';
 import { bech32 } from 'bech32';
-import { buildPayload } from '../../utils/staking.utils.js';
+import { encode as cborEncode } from 'cbor2';
+import {
+  buildPayload,
+  serializeWithdrawals,
+  buildDRepRegistrationCertificate,
+  toCoinBigInt,
+} from '../../utils/staking.utils.js';
 import { Networks } from '../../types/index.js';
 
 /**
@@ -97,5 +103,104 @@ describe('buildPayload - M-04 BigInt lovelace/fee encoding', () => {
 
     expect(bufferContainsSequence(serialized, cborUintBytes(1_500_001n))).toBe(true);
     expect(bufferContainsSequence(serialized, cborUintBytes(200_000n))).toBe(true);
+  });
+});
+
+// M-04 residual: the withdrawal amount (body key 5) and the DRep
+// registration deposit are the remaining hand-built CBOR coins; both
+// must encode as CBOR unsigned integers with full precision above the
+// JS Number 53-bit ceiling.
+describe('serializeWithdrawals - M-04 BigInt withdrawal encoding', () => {
+  // Reward account: e1 header + 28-byte stake key hash (preprod: e0).
+  const rewardAccount = Buffer.concat([Buffer.from([0xe1]), Buffer.alloc(28, 0x33)]);
+
+  const baseOptions = {
+    toAddress: makePreprodAddress(),
+    txInputs: [{ txHash: Buffer.alloc(32, 0xaa), indexInTx: 0 }],
+    network: Networks.PREPROD,
+  };
+
+  it('encodes a withdrawal above 2^53 with full precision (body key 5)', () => {
+    const reward = 2n ** 53n + 1n; // not representable as a JS Number
+    const withdrawals = serializeWithdrawals([{ certificate: rewardAccount, reward }]);
+    const { serialized } = buildPayload({
+      ...baseOptions,
+      netAmount: 2_000_000,
+      feeAmount: 200_000,
+      withdrawals,
+    });
+
+    const expected = cborUintBytes(reward);
+    expect(expected[0]).toBe(0x1b); // 8-byte uint form
+    expect(bufferContainsSequence(serialized, expected)).toBe(true);
+    // The reward account byte string (0x58 0x1d length prefix + 29 bytes)
+    // must appear as the withdrawal map key.
+    expect(bufferContainsSequence(serialized, [0x58, 0x1d, ...rewardAccount])).toBe(true);
+  });
+
+  it('encodes a typical Number reward compactly and exactly', () => {
+    const withdrawals = serializeWithdrawals([{ certificate: rewardAccount, reward: 1_234_567 }]);
+    const { serialized } = buildPayload({
+      ...baseOptions,
+      netAmount: 2_000_000,
+      feeAmount: 200_000,
+      withdrawals,
+    });
+
+    expect(bufferContainsSequence(serialized, cborUintBytes(1_234_567n))).toBe(true);
+  });
+});
+
+// Every hand-built CBOR coin routes through toCoinBigInt, which rejects
+// values that cannot be a valid Cardano coin (CDDL uint) before the
+// transaction reaches Fireblocks for signing.
+describe('toCoinBigInt - coin conversion guards', () => {
+  it('passes BigInt values through, including above 2^53', () => {
+    expect(toCoinBigInt(2n ** 53n + 1n, 'test')).toBe(2n ** 53n + 1n);
+  });
+
+  it('rounds fractional Number inputs', () => {
+    expect(toCoinBigInt(1_500_000.6, 'test')).toBe(1_500_001n);
+  });
+
+  it('rejects NaN with an error naming the field', () => {
+    expect(() => toCoinBigInt(NaN, 'withdrawal reward')).toThrow(/withdrawal reward.*finite/i);
+  });
+
+  it('rejects Infinity', () => {
+    expect(() => toCoinBigInt(Infinity, 'test')).toThrow(/finite/i);
+  });
+
+  it('rejects negative Numbers', () => {
+    expect(() => toCoinBigInt(-1, 'test')).toThrow(/non-negative/i);
+  });
+
+  it('rejects negative BigInts', () => {
+    expect(() => toCoinBigInt(-1n, 'test')).toThrow(/non-negative/i);
+  });
+
+  it('rejects Number inputs beyond the safe integer range', () => {
+    expect(() => toCoinBigInt(2 ** 53 + 2, 'test')).toThrow(/BigInt/);
+  });
+});
+
+describe('buildDRepRegistrationCertificate - M-04 BigInt deposit encoding', () => {
+  const credential = Buffer.alloc(28, 0x44);
+
+  it('encodes a deposit above 2^53 with full precision', () => {
+    const deposit = 2n ** 53n + 1n;
+    const cert = buildDRepRegistrationCertificate(credential, deposit);
+    const encoded = Buffer.from(cborEncode(cert));
+
+    const expected = cborUintBytes(deposit);
+    expect(expected[0]).toBe(0x1b);
+    expect(bufferContainsSequence(encoded, expected)).toBe(true);
+  });
+
+  it('encodes the standard 500 ADA deposit as a CBOR unsigned integer', () => {
+    const cert = buildDRepRegistrationCertificate(credential, 500_000_000);
+    const encoded = Buffer.from(cborEncode(cert));
+
+    expect(bufferContainsSequence(encoded, cborUintBytes(500_000_000n))).toBe(true);
   });
 });
