@@ -53,9 +53,14 @@ export const getProtocolParams = (): Readonly<ProtocolParams> => {
  * @param params - Partial protocol parameters to update
  */
 export const setProtocolParams = (params: Partial<ProtocolParams>): void => {
-  const changedKeys = (Object.keys(params) as Array<keyof ProtocolParams>).filter(
-    (key) => params[key] !== undefined && params[key] !== currentParams[key]
-  );
+  // Explicitly-undefined fields (e.g. from spreading a partial config
+  // object) must not overwrite a previously set value in the store.
+  const definedEntries = (
+    Object.entries(params) as Array<[keyof ProtocolParams, number | undefined]>
+  ).filter((entry): entry is [keyof ProtocolParams, number] => entry[1] !== undefined);
+  const changedKeys = definedEntries
+    .filter(([key, value]) => value !== currentParams[key])
+    .map(([key]) => key);
 
   if (customized && changedKeys.length > 0) {
     logger.warn(
@@ -66,7 +71,7 @@ export const setProtocolParams = (params: Partial<ProtocolParams>): void => {
 
   currentParams = {
     ...currentParams,
-    ...params,
+    ...Object.fromEntries(definedEntries),
   };
   if (changedKeys.length > 0) customized = true;
 };

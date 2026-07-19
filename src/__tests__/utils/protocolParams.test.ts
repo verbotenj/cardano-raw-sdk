@@ -55,4 +55,12 @@ describe("setProtocolParams - process-global override visibility", () => {
     setProtocolParams({ minFeeB: 300_000 });
     expect(warnSpy).not.toHaveBeenCalled();
   });
+
+  it("does not let an explicit undefined field overwrite a previously set value", () => {
+    setProtocolParams({ minFeeB: 200_000 });
+    setProtocolParams({ minFeeA: 45, minFeeB: undefined });
+    const params = getProtocolParams();
+    expect(params.minFeeB).toBe(200_000);
+    expect(params.minFeeA).toBe(45);
+  });
 });
