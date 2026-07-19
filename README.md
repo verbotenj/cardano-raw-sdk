@@ -941,15 +941,17 @@ curl -H "X-API-Key: your-secret-api-key-here" http://localhost:8000/api/balance/
 
 ### Protocol Parameters Configuration
 
-Cardano protocol parameters can be overridden at SDK initialization. This is useful when protocol parameters change at hard forks, allowing you to update without waiting for an SDK release.
+Cardano protocol parameter overrides can be supplied at SDK initialization.
 
-| Parameter          | Default     | Description                                     |
-| ------------------ | ----------- | ----------------------------------------------- |
-| `minFeeA`          | `44`        | Fee coefficient: lovelace per transaction byte  |
-| `minFeeB`          | `155381`    | Fee constant: base lovelace fee                 |
-| `coinsPerUtxoByte` | `4310`      | Lovelace per UTxO byte for min-ADA calculations |
-| `stakeKeyDeposit`  | `2000000`   | Stake key registration deposit (2 ADA)          |
-| `drepDeposit`      | `500000000` | DRep registration deposit (500 ADA)             |
+**Current scope of effect:** the overrides are consumed only by the API layer's fee validation floor (`minFeeB`). Transaction building, minimum-UTxO calculation, and staking/governance deposits use compiled-in constants; wiring them to runtime parameters is tracked as audit finding H-04, pending the Iagon protocol-parameters endpoint. The store is also process-global: the last override wins across all SDK instances in the process, and conflicting overrides log a warning.
+
+| Parameter          | Default     | Description                                     | Consumed today       |
+| ------------------ | ----------- | ----------------------------------------------- | -------------------- |
+| `minFeeA`          | `44`        | Fee coefficient: lovelace per transaction byte  | No (constants)       |
+| `minFeeB`          | `155381`    | Fee constant: base lovelace fee                 | API validation floor |
+| `coinsPerUtxoByte` | `4310`      | Lovelace per UTxO byte for min-ADA calculations | No (constants)       |
+| `stakeKeyDeposit`  | `2000000`   | Stake key registration deposit (2 ADA)          | No (constants)       |
+| `drepDeposit`      | `500000000` | DRep registration deposit (500 ADA)             | No (constants)       |
 
 #### SDK Usage
 
@@ -961,27 +963,14 @@ const sdk = await FireblocksCardanoRawSDK.createInstance({
   iagonApiKey: "...",
   // Override the Iagon API base URL (optional - falls back to IAGON_BASE_URL env, then default)
   iagonBaseUrl: "https://staging.iagon.example.com",
-  // Override protocol parameters (optional)
+  // Override protocol parameters (optional; see scope of effect above)
   protocolParams: {
-    minFeeA: 44,
     minFeeB: 155381,
-    coinsPerUtxoByte: 4310,
-    stakeKeyDeposit: 2_000_000,
-    drepDeposit: 500_000_000,
   },
 });
 ```
 
 You only need to specify parameters that have changed - unspecified parameters keep their defaults.
-
-```typescript
-// Only override fee parameters after a hard fork
-protocolParams: {
-  minFeeA: 45,  // New value
-  minFeeB: 160000,  // New value
-  // coinsPerUtxoByte, stakeKeyDeposit, drepDeposit keep defaults
-}
-```
 
 ## API Documentation
 

@@ -1,20 +1,23 @@
 /**
- * Protocol Parameters Management
+ * Protocol Parameters Store
  *
- * Provides configurable Cardano protocol parameters with sensible defaults.
- * Parameters can be overridden at SDK initialization to adapt to protocol
- * changes without requiring an SDK update.
+ * Holds Cardano protocol parameter overrides supplied at SDK
+ * initialization.
  *
- * Usage:
- *   // At SDK init (optional)
- *   setProtocolParams({ minFeeA: 44, minFeeB: 155381 });
+ * Consumed by the API fee validation floor (api/validation.ts) only.
+ * Transaction building, minimum-UTxO calculation, and deposit amounts
+ * read the constants in constants.ts (runtime wiring tracked as H-04).
  *
- *   // Throughout codebase
- *   const { minFeeA, minFeeB } = getProtocolParams();
+ * Process-global: every SDK instance in the process reads the same
+ * values and the last override wins. Overriding previously customized
+ * values emits a warning.
  */
 
 import { ProtocolParams } from "../types/config.js";
 import { CardanoConstants, CardanoAmounts } from "../constants.js";
+import { Logger } from "./logger.js";
+
+const logger = new Logger("protocol-params");
 
 /**
  * Default protocol parameters based on current Cardano mainnet values.
@@ -28,11 +31,8 @@ const DEFAULT_PROTOCOL_PARAMS: ProtocolParams = {
   drepDeposit: CardanoAmounts.DREP_REGISTRATION_DEPOSIT, // 500_000_000
 };
 
-/**
- * Current protocol parameters (singleton).
- * Starts with defaults, can be updated via setProtocolParams().
- */
 let currentParams: ProtocolParams = { ...DEFAULT_PROTOCOL_PARAMS };
+let customized = false;
 
 /**
  * Get current protocol parameters.
@@ -46,13 +46,29 @@ export const getProtocolParams = (): Readonly<ProtocolParams> => {
  * Update protocol parameters.
  * Merges provided values with current params (partial update supported).
  *
+ * The store is process-global; changing values a previous caller
+ * customized affects every SDK instance in the process and logs a
+ * warning.
+ *
  * @param params - Partial protocol parameters to update
  */
 export const setProtocolParams = (params: Partial<ProtocolParams>): void => {
+  const changedKeys = (Object.keys(params) as Array<keyof ProtocolParams>).filter(
+    (key) => params[key] !== undefined && params[key] !== currentParams[key]
+  );
+
+  if (customized && changedKeys.length > 0) {
+    logger.warn(
+      `Protocol parameters are process-global; overriding ${changedKeys.join(", ")} ` +
+        "affects every SDK instance in this process, including previously created ones."
+    );
+  }
+
   currentParams = {
     ...currentParams,
     ...params,
   };
+  if (changedKeys.length > 0) customized = true;
 };
 
 /**
@@ -61,6 +77,7 @@ export const setProtocolParams = (params: Partial<ProtocolParams>): void => {
  */
 export const resetProtocolParams = (): void => {
   currentParams = { ...DEFAULT_PROTOCOL_PARAMS };
+  customized = false;
 };
 
 /**

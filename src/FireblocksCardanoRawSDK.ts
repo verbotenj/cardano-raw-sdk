@@ -180,7 +180,13 @@ export class FireblocksCardanoRawSDK {
     iagonBaseUrl?: string;
     /**
      * Override Cardano protocol parameters.
-     * Use this to adapt to protocol changes without waiting for an SDK update.
+     *
+     * Consumed by the API fee validation floor (minFeeB) only.
+     * Transaction building, minimum-UTxO calculation, and deposit
+     * amounts read the constants in constants.ts (runtime wiring
+     * tracked as H-04). Process-global: the last override wins across
+     * all SDK instances in the process.
+     *
      * Only specified fields will be overridden; others use defaults.
      */
     protocolParams?: {
@@ -208,7 +214,10 @@ export class FireblocksCardanoRawSDK {
       // Apply custom protocol parameters if provided
       if (protocolParams) {
         setProtocolParams(protocolParams);
-        logger.info("Custom protocol parameters applied", protocolParams);
+        logger.info(
+          "Custom protocol parameters applied (scope: API fee validation floor only)",
+          protocolParams
+        );
       }
 
       if (network === Networks.PREVIEW) {
