@@ -576,13 +576,30 @@ export class FireblocksCardanoRawSDK {
         offset,
         fromSlot: options.fromSlot,
       });
+
+      // A failed page must abort the walk: aggregating the pages so far
+      // and reporting success would silently truncate the history.
+      if (!response.success) {
+        throw new SdkApiError(
+          `History page fetch failed for ${address} at offset ${offset}`,
+          502,
+          "HISTORY_PAGE_FETCH_ERROR",
+          { address, offset, page },
+          "FireblocksCardanoRawSDK"
+        );
+      }
+
       const items = response.data ?? [];
       aggregated.push(...items);
       lastUpdated = response.last_updated ?? lastUpdated;
 
       const hasMore = response.pagination?.hasMore;
       if (hasMore === false) break;
-      if (items.length < PAGE_SIZE) break; // server returned a short page → end of stream
+      // An empty page cannot advance the offset; stop rather than loop.
+      if (items.length === 0) break;
+      // Without pagination metadata, a short page is the only
+      // end-of-stream signal; with hasMore=true a short page continues.
+      if (hasMore === undefined && items.length < PAGE_SIZE) break;
       offset += items.length;
     }
 
