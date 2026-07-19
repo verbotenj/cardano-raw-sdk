@@ -107,6 +107,22 @@ describe("assertRecipientAddress (M-02)", () => {
     expect(() => assertRecipientAddress("hello world", Networks.MAINNET)).toThrow(SdkApiError);
   });
 
+  it("rejects a Byron-era address with a message naming the unsupported format", () => {
+    // Fireblocks rejects Byron destinations platform-wide (INVALID_ADDRESS),
+    // so the SDK rejects them up front; the error must name the actual
+    // problem rather than calling a valid on-chain address invalid.
+    const byronAddress = "Ae2tdPwUPEZFRbyhz3cpfC2CumGzNkFBN2L42rcUc2yjQpEkxDbkPodpMAi";
+    try {
+      assertRecipientAddress(byronAddress, Networks.MAINNET);
+      throw new Error("expected to throw");
+    } catch (err) {
+      expect(err).toBeInstanceOf(SdkApiError);
+      expect((err as SdkApiError).statusCode).toBe(400);
+      expect((err as SdkApiError).message).toMatch(/Byron/i);
+      expect((err as SdkApiError).message).toMatch(/not supported/i);
+    }
+  });
+
   it("returns descriptive error info for network mismatch", () => {
     try {
       assertRecipientAddress(makeBaseAddress(true), Networks.PREPROD);

@@ -1,5 +1,6 @@
 import {
   Address,
+  ByronAddress,
   TransactionInput,
   TransactionHash,
   BigNum,
@@ -197,6 +198,19 @@ export const assertRecipientAddress = (recipientAddress: string, network: Networ
   try {
     parsed = Address.from_bech32(recipientAddress);
   } catch {
+    // Byron-era (base58) addresses are valid on-chain but rejected by
+    // Fireblocks address-format validation (INVALID_ADDRESS), so they
+    // are rejected here with a message naming the unsupported format.
+    if (ByronAddress.is_valid(recipientAddress)) {
+      throw new SdkApiError(
+        "Invalid recipientAddress: Byron-era (base58) addresses are not supported; " +
+          "use a Shelley bech32 address (addr1… / addr_test1…)",
+        400,
+        "ValidationError",
+        { recipientAddress },
+        "FireblocksCardanoRawSDK"
+      );
+    }
     throw new SdkApiError(
       "Invalid recipientAddress: not a valid Cardano bech32 address",
       400,
