@@ -35,7 +35,7 @@ export interface SecurityConfig {
   maxBodySize: string;
   rateLimitWindowMs: number;
   rateLimitMaxRequests: number;
-  corsOrigins: string | string[];
+  corsOrigins?: string | string[];
   apiKeyEnabled: boolean;
   apiKey?: string;
   trustProxy: boolean | number | string;
@@ -61,7 +61,12 @@ const getConfig = (): SecurityConfig => ({
   maxBodySize: process.env.MAX_BODY_SIZE || "1mb",
   rateLimitWindowMs: parseInt(process.env.RATE_LIMIT_WINDOW_MS || "900000", 10), // 15 minutes
   rateLimitMaxRequests: parseInt(process.env.RATE_LIMIT_MAX_REQUESTS || "100", 10),
-  corsOrigins: process.env.CORS_ORIGINS ? process.env.CORS_ORIGINS.split(",") : "*",
+  corsOrigins:
+    process.env.CORS_ORIGINS === undefined || process.env.CORS_ORIGINS === ""
+      ? undefined
+      : process.env.CORS_ORIGINS === "*"
+        ? "*"
+        : process.env.CORS_ORIGINS.split(",").map((origin) => origin.trim()),
   apiKeyEnabled: process.env.API_KEY_ENABLED === "true",
   apiKey: process.env.API_KEY,
   trustProxy: parseTrustProxy(process.env.TRUST_PROXY),
@@ -100,15 +105,26 @@ export const applySecurityMiddleware = (app: Express): void => {
   // client address when the server runs behind a reverse proxy.
   app.set("trust proxy", config.trustProxy);
 
-  // CORS configuration
-  app.use(
-    cors({
-      origin: config.corsOrigins,
-      methods: ["GET", "POST", "PUT", "DELETE", "OPTIONS"],
-      allowedHeaders: ["Content-Type", "Authorization", "X-API-Key"],
-      credentials: true,
-    })
-  );
+  // CORS is opt-in: without CORS_ORIGINS no CORS headers are sent and
+  // browsers enforce same-origin. A wildcard origin is served without
+  // credentials, as required by the CORS specification.
+  if (config.corsOrigins !== undefined) {
+    const isWildcard = config.corsOrigins === "*";
+    if (isWildcard) {
+      logger.warn(
+        "CORS_ORIGINS=* allows any website to call this API from a browser. " +
+          "Restrict CORS_ORIGINS to specific origins in production."
+      );
+    }
+    app.use(
+      cors({
+        origin: config.corsOrigins,
+        methods: ["GET", "POST", "PUT", "DELETE", "OPTIONS"],
+        allowedHeaders: ["Content-Type", "Authorization", "X-API-Key"],
+        credentials: !isWildcard,
+      })
+    );
+  }
 
   // Rate limiting
   app.use(

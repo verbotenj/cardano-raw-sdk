@@ -13,7 +13,7 @@ const makeApp = (): { app: Express; use: jest.Mock; set: jest.Mock } => {
   return { app: { use, set } as unknown as Express, use, set };
 };
 
-const ENV_KEYS = ["API_KEY_ENABLED", "API_KEY", "TRUST_PROXY"];
+const ENV_KEYS = ["API_KEY_ENABLED", "API_KEY", "TRUST_PROXY", "CORS_ORIGINS"];
 let savedEnv: Record<string, string | undefined>;
 
 beforeEach(() => {
@@ -129,6 +129,67 @@ describe("applySecurityMiddleware - API key comparison", () => {
     auth(req, res, next as NextFunction);
     expect(next).not.toHaveBeenCalled();
     expect(status).toHaveBeenCalledWith(401);
+  });
+});
+
+describe("applySecurityMiddleware - CORS configuration", () => {
+  // CORS is opt-in: without CORS_ORIGINS the server sends no CORS
+  // headers, so browsers enforce same-origin. A wildcard origin must
+  // not be combined with credentials.
+  const invokeCorsMiddleware = (use: jest.Mock, origin: string) => {
+    const corsMiddleware = use.mock.calls[0][0] as (
+      req: Request,
+      res: Response,
+      next: NextFunction
+    ) => unknown;
+    const headers: Record<string, unknown> = {};
+    const req = { method: "GET", headers: { origin } } as unknown as Request;
+    const res = {
+      setHeader: (key: string, value: unknown) => {
+        headers[key] = value;
+      },
+      getHeader: (key: string) => headers[key],
+    } as unknown as Response;
+    const next = jest.fn();
+    corsMiddleware(req, res, next as NextFunction);
+    return { headers, next };
+  };
+
+  it("registers no CORS middleware when CORS_ORIGINS is unset", () => {
+    const { app, use } = makeApp();
+    applySecurityMiddleware(app);
+    // Only the rate limiter is registered (auth is disabled by default)
+    expect(use).toHaveBeenCalledTimes(1);
+  });
+
+  it("allows a configured origin and enables credentials", () => {
+    process.env.CORS_ORIGINS = "https://app.example.com";
+    const { app, use } = makeApp();
+    applySecurityMiddleware(app);
+    const { headers, next } = invokeCorsMiddleware(use, "https://app.example.com");
+    expect(headers["Access-Control-Allow-Origin"]).toBe("https://app.example.com");
+    expect(headers["Access-Control-Allow-Credentials"]).toBe("true");
+    expect(next).toHaveBeenCalled();
+  });
+
+  it("serves wildcard origin without credentials when CORS_ORIGINS=*", () => {
+    process.env.CORS_ORIGINS = "*";
+    const { app, use } = makeApp();
+    applySecurityMiddleware(app);
+    const { headers } = invokeCorsMiddleware(use, "https://anywhere.example.com");
+    expect(headers["Access-Control-Allow-Origin"]).toBe("*");
+    expect(headers["Access-Control-Allow-Credentials"]).toBeUndefined();
+  });
+
+  it("warns when a wildcard origin is configured", () => {
+    process.env.CORS_ORIGINS = "*";
+    const warnSpy = jest.spyOn(console, "warn").mockImplementation(() => {});
+    const { app } = makeApp();
+    applySecurityMiddleware(app);
+    const warned = warnSpy.mock.calls.some((call) =>
+      call.some((arg) => typeof arg === "string" && /CORS/i.test(arg))
+    );
+    expect(warned).toBe(true);
   });
 });
 

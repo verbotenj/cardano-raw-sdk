@@ -813,7 +813,7 @@ cp .env.example .env
 | `RATE_LIMIT_WINDOW_MS`                | No       | `900000`                                    | Rate limit time window (ms)                                     |
 | `RATE_LIMIT_MAX_REQUESTS`             | No       | `100`                                       | Max requests per rate limit window                              |
 | `TRUST_PROXY`                         | No       | `false`                                     | Express `trust proxy` setting (hop count, preset, or boolean)   |
-| `CORS_ORIGINS`                        | No       | `*`                                         | Allowed CORS origins (comma-separated)                          |
+| `CORS_ORIGINS`                        | No       | unset (CORS disabled)                       | Allowed CORS origins (comma-separated, or `*`)                  |
 | `API_KEY_ENABLED`                     | No       | `false`                                     | Enable API key authentication                                   |
 | `API_KEY`                             | No       | -                                           | API key value (required if `API_KEY_ENABLED=true`)              |
 
@@ -876,18 +876,20 @@ The API server includes configurable security middleware for CORS, rate limiting
 | `RATE_LIMIT_WINDOW_MS`    | `900000` | Rate limiting time window in milliseconds (default: 15 minutes)                                                                |
 | `RATE_LIMIT_MAX_REQUESTS` | `100`    | Maximum requests allowed per window                                                                                            |
 | `TRUST_PROXY`             | `false`  | Express `trust proxy` setting: number of reverse-proxy hops (e.g., `1`), a preset/subnet (`loopback`, `10.0.0.0/8`), or `true` |
-| `CORS_ORIGINS`            | `*`      | Allowed CORS origins. Use `*` for all, or comma-separated list (e.g., `https://app.example.com,https://admin.example.com`)     |
+| `CORS_ORIGINS`            | unset    | Allowed CORS origins: comma-separated list, or `*` for all. Unset: no CORS headers are sent (browsers enforce same-origin)     |
 | `API_KEY_ENABLED`         | `false`  | Enable API key authentication                                                                                                  |
 | `API_KEY`                 | -        | Required API key value when `API_KEY_ENABLED=true`                                                                             |
 
 #### CORS Configuration
 
-```bash
-# Allow all origins (development)
-CORS_ORIGINS=*
+CORS is disabled by default: no CORS headers are sent, so browsers block cross-origin calls. Enable it only if browser clients call this API directly. A wildcard origin is served without credentials (as the CORS specification requires) and logs a startup warning.
 
+```bash
 # Allow specific origins (production)
 CORS_ORIGINS=https://myapp.com,https://admin.myapp.com
+
+# Allow all origins (development only)
+CORS_ORIGINS=*
 ```
 
 #### Rate Limiting
