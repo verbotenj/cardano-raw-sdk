@@ -146,14 +146,19 @@ export const applySecurityMiddleware = (app: Express): void => {
   if (config.apiKeyEnabled && config.apiKey) {
     const apiKey = config.apiKey;
     app.use((req: Request, res: Response, next: NextFunction) => {
-      // Skip auth for health check and documentation endpoints
-      const publicPaths = ["/health", "/api-docs", "/docs"];
+      // /health has no sub-resources, so it is matched exactly; /docs
+      // and /api-docs serve nested static assets, so their sub-paths
+      // are exempt too. Matching prevents an unrelated route sharing
+      // one of these prefixes (e.g. /healthz) from bypassing auth.
+      const exactPublicPaths = ["/health"];
+      const prefixPublicPaths = ["/api-docs", "/docs"];
       // Webhook requests carry no X-API-Key header; they are
       // authenticated by Fireblocks signature verification in the
       // controller. Matched exactly so sibling paths remain protected.
       const signatureAuthenticatedPaths = ["/api/webhook"];
       if (
-        publicPaths.some((p) => req.path.startsWith(p)) ||
+        exactPublicPaths.includes(req.path) ||
+        prefixPublicPaths.some((p) => req.path === p || req.path.startsWith(`${p}/`)) ||
         signatureAuthenticatedPaths.includes(req.path)
       ) {
         return next();

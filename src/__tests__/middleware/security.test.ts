@@ -268,4 +268,34 @@ describe("applySecurityMiddleware - webhook exemption from API key auth", () => 
     expect(next).not.toHaveBeenCalled();
     expect(status).toHaveBeenCalledWith(401);
   });
+
+  it("still requires an API key on a path that merely shares the /health prefix", () => {
+    const { app, use } = makeApp();
+    applySecurityMiddleware(app);
+    const auth = getAuthMiddleware(use);
+    const { req, res, next, status } = makeReqRes("/healthz");
+    auth(req, res, next as NextFunction);
+    expect(next).not.toHaveBeenCalled();
+    expect(status).toHaveBeenCalledWith(401);
+  });
+
+  it("exempts the exact /health path", () => {
+    const { app, use } = makeApp();
+    applySecurityMiddleware(app);
+    const auth = getAuthMiddleware(use);
+    const { req, res, next } = makeReqRes("/health");
+    auth(req, res, next as NextFunction);
+    expect(next).toHaveBeenCalled();
+  });
+
+  it("exempts nested docs and api-docs asset paths", () => {
+    const { app, use } = makeApp();
+    applySecurityMiddleware(app);
+    const auth = getAuthMiddleware(use);
+    for (const path of ["/docs", "/docs/assets/style.css", "/api-docs", "/api-docs/swagger.json"]) {
+      const { req, res, next } = makeReqRes(path);
+      auth(req, res, next as NextFunction);
+      expect(next).toHaveBeenCalled();
+    }
+  });
 });
