@@ -41,8 +41,15 @@ export class UtxoProvider implements IUtxoProvider {
       const utxo = await this.findUtxoForAddress(addressObj.address, minAmount);
 
       if (utxo) {
-        // Lock the UTXO to prevent double-spend in concurrent operations
-        const release = utxoLocks.lockOne(utxo.txHash, utxo.indexInTx);
+        // Atomic acquisition: a concurrent operation may have locked
+        // this UTxO between the availability check and this point.
+        const release = utxoLocks.tryLockOne(utxo.txHash, utxo.indexInTx);
+        if (release === null) {
+          this.logger.debug(
+            `UTXO ${utxo.txHash}#${utxo.indexInTx} was locked concurrently, skipping address ${addressObj.address}`
+          );
+          continue;
+        }
 
         return {
           address: addressObj.address,
