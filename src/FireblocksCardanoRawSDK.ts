@@ -1959,11 +1959,21 @@ export class FireblocksCardanoRawSDK {
 
     for (let batchNum = 0; batchNum < maxBatches; batchNum++) {
       // re-fetch UTxOs after each batch to get fresh state, applying the
-      // same spendability and lock filters as the single-batch path
-      const rawUtxos = await fetchUtxos(this.iagonApiService, senderAddress);
-      const utxos = filterSpendableUtxos(rawUtxos, "consolidation-batch").filter(
-        (u) => !utxoLocks.isLocked(u.transaction_id, u.output_index)
-      );
+      // same spendability and lock filters as the single-batch path.
+      // A fetch failure after submitted batches must preserve the
+      // partial result rather than discard already-confirmed txHashes.
+      let utxos: UtxoData[];
+      try {
+        const rawUtxos = await fetchUtxos(this.iagonApiService, senderAddress);
+        utxos = filterSpendableUtxos(rawUtxos, "consolidation-batch").filter(
+          (u) => !utxoLocks.isLocked(u.transaction_id, u.output_index)
+        );
+      } catch (error) {
+        partialError =
+          error instanceof Error ? error.message : "UTxO re-fetch failed between batches";
+        this.logger.error(`Batch ${batchNum + 1} UTxO fetch failed: ${partialError}`);
+        break;
+      }
 
       // stop if we've consolidated enough (only 1 UTxO left or below threshold)
       if (utxos.length < minUtxoCount) {
@@ -2034,10 +2044,21 @@ export class FireblocksCardanoRawSDK {
       );
     }
 
-    // get final state for output metadata
-    const finalUtxos = await fetchUtxos(this.iagonApiService, senderAddress);
-    const tokenPolicies = this.extractTokenPoliciesFromUtxos(finalUtxos);
-    const totalLovelace = finalUtxos.reduce((sum, u) => sum + u.value.lovelace, 0);
+    // get final state for output metadata. The metadata is informational:
+    // a fetch failure here must not discard the submitted batches' result.
+    let tokenPolicies: string[] = [];
+    let totalLovelace = 0;
+    try {
+      const finalUtxos = await fetchUtxos(this.iagonApiService, senderAddress);
+      tokenPolicies = this.extractTokenPoliciesFromUtxos(finalUtxos);
+      totalLovelace = finalUtxos.reduce((sum, u) => sum + u.value.lovelace, 0);
+    } catch (error) {
+      const message = error instanceof Error ? error.message : String(error);
+      this.logger.warn(`Final UTxO state fetch failed after consolidation: ${message}`);
+      partialError = partialError
+        ? `${partialError}; final UTxO state unavailable: ${message}`
+        : `Final UTxO state unavailable: ${message}`;
+    }
     const totalFeeFormatted = formatWithDecimals(totalFeeLovelace, CardanoConstants.ADA_DECIMALS);
 
     const result: ConsolidateUtxosResult = {
