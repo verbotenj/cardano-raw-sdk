@@ -3,46 +3,12 @@ import https from "https";
 import { z } from "zod";
 import { Logger, ErrorHandler, decodeAssetName } from "../utils/index.js";
 import { iagonBaseUrl } from "../constants.js";
-
-// Zod schemas for critical Iagon responses
-const utxoDataSchema = z.object({
-  transaction_id: z.string(),
-  output_index: z.number(),
-  address: z.string(),
-  value: z.object({
-    lovelace: z.number(),
-    assets: z.record(z.string(), z.number()).optional().default({}),
-  }),
-  datum_hash: z.string().nullable(),
-  script_hash: z.string().nullable(),
-  created_at: z.object({
-    slot_no: z.number(),
-    header_hash: z.string(),
-  }),
-});
-
-const utxoResponseSchema = z.object({
-  success: z.boolean(),
-  data: z.array(utxoDataSchema).optional(),
-});
-
-const balanceResponseSchema = z.object({
-  success: z.boolean(),
-  data: z.object({
-    lovelace: z.number(),
-    assets: z.record(z.string(), z.union([z.number(), z.record(z.string(), z.number())])),
-  }),
-});
-
-// Iagon /v1/tx/submit returns either { success: true, data: { txHash } }
-// on a successful submission or { success: false, error: "..." } on rejection.
-// Both arrive with HTTP 200, so we parse permissively and surface the error
-// from submitTransfer itself (see below).
-const transferResponseSchema = z.object({
-  success: z.boolean(),
-  data: z.object({ txHash: z.string() }).optional(),
-  error: z.string().optional(),
-});
+import {
+  utxoResponseSchema,
+  balanceResponseSchema,
+  transferResponseSchema,
+  poolInfoResponseSchema,
+} from "./iagon.schemas.js";
 import {
   BalanceResponse,
   getBalanceByAddressOpts,
@@ -397,11 +363,7 @@ export class IagonApiService {
         throw new SdkApiError(`Unexpected response status: ${response.status}`, response.status);
       }
 
-      const parsed = this.validateResponse(
-        response.data,
-        transferResponseSchema,
-        "submitTransfer"
-      );
+      const parsed = this.validateResponse(response.data, transferResponseSchema, "submitTransfer");
 
       if (!parsed.success || !parsed.data?.txHash) {
         throw new SdkApiError(
@@ -490,6 +452,7 @@ export class IagonApiService {
       const response = await this.axiosInstance.get(url);
 
       if (response.status === 200) {
+        this.validateResponse(response.data, poolInfoResponseSchema, "getPoolInfo");
         return response.data;
       }
       throw new SdkApiError(`Unexpected response status: ${response.status}`, response.status);
