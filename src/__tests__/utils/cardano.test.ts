@@ -158,6 +158,20 @@ describe("buildAdaTransactionWithCalculatedFee - M-10 fee/body consistency", () 
     const { fee, txBody } = buildAt(totalInput);
     expect(Number(txBody.fee().to_str())).toBe(fee);
   });
+
+  it("returns live outputs and body owned by the caller", () => {
+    // The convergence loop frees its intermediate WASM handles; the
+    // returned handles must remain usable. A freed handle throws on use.
+    const { outputs, txBody } = buildAt(10_000_000);
+    expect(txBody.to_bytes().length).toBeGreaterThan(0);
+    for (const output of outputs) {
+      const amount = output.amount();
+      const coin = amount.coin();
+      expect(Number(coin.to_str())).toBeGreaterThan(0);
+      coin.free();
+      amount.free();
+    }
+  });
 });
 
 // M-06: datum- or script-bearing UTxOs are excluded from selection on every

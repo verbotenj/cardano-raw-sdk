@@ -826,12 +826,20 @@ const convergeTransactionFee = (
       `[${label}] body: ${txBodySize}B, total: ${totalSize}B, fee: ${calculatedFee} lovelace`
     );
 
-    if (Math.abs(calculatedFee - currentFee) <= CardanoAmounts.TX_FEE_TOLERANCE) {
+    const converged = Math.abs(calculatedFee - currentFee) <= CardanoAmounts.TX_FEE_TOLERANCE;
+
+    // This iteration's handles only measure the fee: on convergence the
+    // body is rebuilt with the converged fee, otherwise the next
+    // iteration rebuilds them. Free them in both cases.
+    for (const output of outputs) output.free();
+    txBody.free();
+
+    if (converged) {
       logger.info(`[${label}] fee converged at ${calculatedFee} after ${i + 1} iterations`);
-      // Rebuild the body with the converged fee: the body constructed in
-      // this iteration still encodes currentFee, which may differ from
-      // calculatedFee by up to TX_FEE_TOLERANCE. The returned fee must
-      // match the fee encoded in the returned body.
+      // Rebuild the body with the converged fee: the measuring body still
+      // encodes currentFee, which may differ from calculatedFee by up to
+      // TX_FEE_TOLERANCE. The returned fee must match the fee encoded in
+      // the returned body. The caller owns the returned handles.
       const finalOutputs = buildOutputsFn(calculatedFee);
       const finalTxBody = buildTransaction({
         txInputs,
