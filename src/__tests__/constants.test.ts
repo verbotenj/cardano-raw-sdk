@@ -85,9 +85,18 @@ describe('CardanoConstants', () => {
   });
 
   describe('UTxO locking', () => {
-    it('should have reasonable lock TTL (2 minutes)', () => {
-      expect(CardanoConstants.UTXO_LOCK_TTL_MS).toBe(120_000);
-      expect(CardanoConstants.UTXO_LOCK_TTL_MS).toBe(2 * 60 * 1000);
+    it('should have a reasonable lock TTL (4 minutes)', () => {
+      expect(CardanoConstants.UTXO_LOCK_TTL_MS).toBe(240_000);
+      expect(CardanoConstants.UTXO_LOCK_TTL_MS).toBe(4 * 60 * 1000);
+    });
+
+    it('lock TTL must be >= the on-chain confirmation timeout', () => {
+      // Batched consolidation holds a lock while waiting up to TX_CONFIRM_TIMEOUT_MS for a
+      // spend to settle; if the lock expired sooner, unsettled inputs could be re-selected
+      // by a concurrent request, reopening the double-spend window (see constants.ts).
+      expect(CardanoConstants.UTXO_LOCK_TTL_MS).toBeGreaterThanOrEqual(
+        CardanoConstants.TX_CONFIRM_TIMEOUT_MS
+      );
     });
   });
 

@@ -222,7 +222,7 @@ export class StakingService {
       const txHash = await this.buildSignAndSubmit({
         vaultAccountId,
         addressInfo: addressWithUtxo,
-        netAmount: addressWithUtxo.utxo.nativeAmount - fee,
+        netAmount: addressWithUtxo.totalAmount - fee,
         fee,
         certificates: [delegationCertificate],
         operation: "delegate to pool",
@@ -334,7 +334,7 @@ export class StakingService {
 
       // Build a helper so we can retry with a corrected amount without repeating code
       const buildAndSubmitWithdrawal = async (amount: number) => {
-        const netAmount = addressWithUtxo!.utxo.nativeAmount - fee + amount;
+        const netAmount = addressWithUtxo!.totalAmount - fee + amount;
         const w = { ...withdrawal, reward: amount };
         const withdrawalsDict = serializeWithdrawals([w]);
         return this.buildSignAndSubmit({
@@ -427,7 +427,7 @@ export class StakingService {
       const drepInfo = drepActionToDRepInfo(drepAction, drepId);
       const voteDelegationCertificate = buildVoteDelegationCertificate(certificate, drepInfo);
 
-      const netAmount = addressWithUtxo.utxo.nativeAmount - fee;
+      const netAmount = addressWithUtxo.totalAmount - fee;
 
       const submitResponse = await this.buildSignAndSubmit({
         vaultAccountId,
@@ -488,7 +488,7 @@ export class StakingService {
       );
 
       const drepId = encodeDRepId(credential);
-      const netAmount = addressWithUtxo.utxo.nativeAmount - fee - depositAmount;
+      const netAmount = addressWithUtxo.totalAmount - fee - depositAmount;
 
       const submitResponse = await this.buildSignAndSubmit({
         vaultAccountId,
@@ -558,7 +558,7 @@ export class StakingService {
         anchor
       );
 
-      const netAmount = addressWithUtxo.utxo.nativeAmount - fee;
+      const netAmount = addressWithUtxo.totalAmount - fee;
 
       const submitResponse = await this.buildSignAndSubmit({
         vaultAccountId,
@@ -610,11 +610,12 @@ export class StakingService {
   /**
    * Get delegation history for a vault account
    */
-  async getDelegationHistory(vaultAccountId: string, limit: number = 100) {
+  async getDelegationHistory(vaultAccountId: string) {
     try {
       this.logger.info(`Getting delegation history for vault account ${vaultAccountId}`);
       const stakeAddress = await this.addressResolver.getStakeAddress(vaultAccountId);
-      return await this.iagonApiService.getDelegationHistory(stakeAddress, 0, limit);
+      // Return the complete history across all pages (M-14).
+      return await this.iagonApiService.getAllDelegationHistory(stakeAddress);
     } catch (error: unknown) {
       throw this.errorHandler.handleApiError(error, "getting delegation history");
     }
@@ -623,11 +624,12 @@ export class StakingService {
   /**
    * Get registration/deregistration history for a vault account
    */
-  async getRegistrationHistory(vaultAccountId: string, limit: number = 100) {
+  async getRegistrationHistory(vaultAccountId: string) {
     try {
       this.logger.info(`Getting registration history for vault account ${vaultAccountId}`);
       const stakeAddress = await this.addressResolver.getStakeAddress(vaultAccountId);
-      return await this.iagonApiService.getRegistrationHistory(stakeAddress, limit);
+      // Return the complete history across all pages (M-14).
+      return await this.iagonApiService.getAllRegistrationHistory(stakeAddress);
     } catch (error: unknown) {
       throw this.errorHandler.handleApiError(error, "getting registration history");
     }
@@ -702,7 +704,7 @@ export class StakingService {
     const { serialized, deserialized } = await this.transactionBuilder.buildTransaction({
       toAddress: addressWithUtxo.address,
       netAmount,
-      utxo: addressWithUtxo.utxo,
+      utxos: addressWithUtxo.utxos,
       fee,
       ttl,
       certificates,
@@ -746,7 +748,7 @@ export class StakingService {
       addressWithUtxo.address,
       this.networkConfig.isMainnet()
     );
-    const netAmount = addressWithUtxo.utxo.nativeAmount - fee - depositAmount;
+    const netAmount = addressWithUtxo.totalAmount - fee - depositAmount;
     const registrationCertificate = buildRegistrationCertificate(certificate);
 
     return await this.executeTransaction({
@@ -787,7 +789,7 @@ export class StakingService {
       const w = amount > 0 ? { ...withdrawal, reward: amount } : null;
       const withdrawalsDict = w ? serializeWithdrawals([w]) : undefined;
       const netAmount =
-        addressWithUtxo.utxo.nativeAmount - fee + CardanoAmounts.DEPOSIT_AMOUNT + amount;
+        addressWithUtxo.totalAmount - fee + CardanoAmounts.DEPOSIT_AMOUNT + amount;
       return this.executeTransaction({
         vaultAccountId,
         addressWithUtxo,

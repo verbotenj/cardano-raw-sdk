@@ -382,6 +382,48 @@ export class IagonApiService {
   };
 
   /**
+   * Iterates every page of a paginated Iagon endpoint and returns the concatenated
+   * `data` arrays. Stops once `pagination.total` records are collected, a short/empty
+   * page is returned, or a hard page cap is reached (audit finding M-14). The cap
+   * bounds memory/time for pathological result sets.
+   */
+  private async fetchAllPages<T>(
+    fetchPage: (
+      offset: number,
+      limit: number
+    ) => Promise<{ data: T[]; pagination?: { total?: number } }>,
+    pageSize: number = 100,
+    maxPages: number = 1000
+  ): Promise<T[]> {
+    const all: T[] = [];
+    let offset = 0;
+
+    for (let page = 0; page < maxPages; page++) {
+      const { data, pagination } = await fetchPage(offset, pageSize);
+      if (!data || data.length === 0) break;
+
+      all.push(...data);
+
+      // A short page means we've reached the end.
+      if (data.length < pageSize) break;
+
+      // If the API reports a total, stop once we've collected all of it.
+      const total = pagination?.total;
+      if (typeof total === "number" && all.length >= total) break;
+
+      offset += pageSize;
+
+      if (page === maxPages - 1) {
+        this.logger.warn(
+          `fetchAllPages reached the ${maxPages}-page cap for a paginated endpoint; results may be truncated`
+        );
+      }
+    }
+
+    return all;
+  }
+
+  /**
    * Get staking rewards for a stake address
    */
   public getStakeAccountRewards = async (
@@ -404,6 +446,47 @@ export class IagonApiService {
         `fetching rewards for stake address ${stakeAddress}`
       );
     }
+  };
+
+  /**
+   * Get the COMPLETE staking reward history for a stake address, iterating through all
+   * pages instead of returning only the first (audit finding M-14).
+   */
+  public getAllStakeAccountRewards = async (
+    stakeAddress: string,
+    order: "asc" | "desc" = "asc"
+  ): Promise<StakeAccountRewardsResponse["data"]> => {
+    return this.fetchAllPages(async (offset, limit) => {
+      const page = await this.getStakeAccountRewards(stakeAddress, offset, limit, order);
+      return { data: page.data, pagination: page.pagination };
+    });
+  };
+
+  /**
+   * Get the COMPLETE delegation history for a stake address, iterating through all pages.
+   */
+  public getAllDelegationHistory = async (
+    stakeAddress: string,
+    order: "asc" | "desc" = "asc"
+  ): Promise<DelegationHistoryResponse["data"]> => {
+    return this.fetchAllPages(async (offset, limit) => {
+      const page = await this.getDelegationHistory(stakeAddress, offset, limit, order);
+      return { data: page.data, pagination: page.pagination };
+    });
+  };
+
+  /**
+   * Get the COMPLETE registration/deregistration history for a stake address, iterating
+   * through all pages.
+   */
+  public getAllRegistrationHistory = async (
+    stakeAddress: string,
+    order: "asc" | "desc" = "asc"
+  ): Promise<RegistrationHistoryResponse["data"]> => {
+    return this.fetchAllPages(async (offset, limit) => {
+      const page = await this.getRegistrationHistory(stakeAddress, limit, offset, order);
+      return { data: page.data, pagination: page.pagination };
+    });
   };
 
   /**

@@ -1928,6 +1928,9 @@ export class FireblocksCardanoRawSDK {
     senderAddress: string,
     utxos: UtxoData[]
   ): Promise<ConsolidateUtxosResult> {
+    // Lock the inputs for the sign+submit window so a concurrent request cannot
+    // select the same UTxOs and cause a double-spend attempt.
+    const release = utxoLocks.lock(utxos);
     try {
       const txInputs = createTransactionInputs(utxos);
       const ttl = await this.fetchCurrentTtl();
@@ -1967,7 +1970,55 @@ export class FireblocksCardanoRawSDK {
       };
     } catch (error) {
       this.logAndRethrow("Consolidation", error);
+    } finally {
+      release();
     }
+  }
+
+  /**
+   * Polls the address's UTxO set until none of the given `spentUtxos` remain,
+   * i.e. the transaction that consumed them has settled on-chain (as reflected by
+   * the indexer). Returns true once confirmed, or false if the timeout elapses.
+   *
+   * Used to gate batched consolidation so the next batch never re-selects UTxOs
+   * that a prior batch already spent (audit finding OC-2).
+   */
+  private async waitForUtxosSpent(
+    address: string,
+    spentUtxos: UtxoData[],
+    timeoutMs: number = CardanoConstants.TX_CONFIRM_TIMEOUT_MS,
+    pollIntervalMs: number = CardanoConstants.TX_CONFIRM_POLL_INTERVAL_MS
+  ): Promise<boolean> {
+    const spentKeys = new Set(spentUtxos.map((u) => `${u.transaction_id}#${u.output_index}`));
+    const deadline = Date.now() + timeoutMs;
+
+    while (Date.now() < deadline) {
+      const current = await fetchUtxos(this.iagonApiService, address);
+
+      // `fetchUtxos` swallows API errors and returns [] on failure. An empty result is
+      // therefore treated as inconclusive, NOT as "all inputs spent": a successful
+      // consolidation always leaves its own output UTxO at this address, so a genuinely
+      // empty set never occurs right after one. This prevents a transient indexer error
+      // from being mistaken for a confirmed spend (which would release the lock early and
+      // let the next batch re-select the still-unsettled inputs → double-spend attempt).
+      if (current.length > 0) {
+        const stillPresent = current.some((u) =>
+          spentKeys.has(`${u.transaction_id}#${u.output_index}`)
+        );
+        if (!stillPresent) {
+          this.logger.info(
+            `Confirmed ${spentKeys.size} input UTxO(s) spent on-chain for ${address}`
+          );
+          return true;
+        }
+      }
+      await new Promise((r) => setTimeout(r, pollIntervalMs));
+    }
+
+    this.logger.warn(
+      `Timed out after ${timeoutMs}ms waiting for ${spentKeys.size} UTxO(s) to be spent on-chain`
+    );
+    return false;
   }
 
   /** Batched consolidation for dust-attacked addresses */
@@ -1984,10 +2035,11 @@ export class FireblocksCardanoRawSDK {
     let partialError: string | undefined;
 
     for (let batchNum = 0; batchNum < maxBatches; batchNum++) {
-      // re-fetch UTxOs after each batch to get fresh state, applying the
-      // same spendability and lock filters as the single-batch path.
-      // A fetch failure after submitted batches must preserve the
-      // partial result rather than discard already-confirmed txHashes.
+      // Re-fetch UTxOs after each batch to get fresh state, applying the same
+      // spendability and lock filters as the single-batch path, and excluding any
+      // still locked by a concurrent request or an unconfirmed prior batch.
+      // A fetch failure after submitted batches must preserve the partial result
+      // rather than discard already-confirmed txHashes (fetchUtxos now throws).
       let utxos: UtxoData[];
       try {
         const rawUtxos = await fetchUtxos(this.iagonApiService, senderAddress);
@@ -2009,6 +2061,10 @@ export class FireblocksCardanoRawSDK {
 
       // take up to batchSize UTxOs for this batch
       const batchUtxos = utxos.slice(0, batchSize);
+
+      // Lock this batch's inputs so neither a concurrent request nor the next batch
+      // can re-select them before the spend is confirmed on-chain.
+      const releaseBatch = utxoLocks.lock(batchUtxos);
 
       try {
         const txInputs = createTransactionInputs(batchUtxos);
@@ -2048,11 +2104,29 @@ export class FireblocksCardanoRawSDK {
 
         this.logger.info(`Batch ${batchNum + 1} successful: ${txHash}`);
 
-        // brief pause between batches to let chain register the tx
+        // Wait for this batch's inputs to be observed as spent on-chain before
+        // starting the next batch, instead of a fixed delay. This prevents the next
+        // batch from fetching stale UTxOs that were already successfully spent.
         if (batchNum < maxBatches - 1) {
-          await new Promise((r) => setTimeout(r, 1000));
+          const confirmed = await this.waitForUtxosSpent(senderAddress, batchUtxos);
+          if (confirmed) {
+            // Inputs are gone from the chain; safe to release the lock.
+            releaseBatch();
+          } else {
+            // Submission succeeded but the spend has not settled within the timeout.
+            // Leave the inputs locked (the TTL will expire them) and stop, rather than
+            // risk selecting them again and producing a spurious partial error.
+            this.logger.warn(
+              `Batch ${batchNum + 1} inputs not confirmed spent within timeout; stopping batched consolidation`
+            );
+            break;
+          }
         }
+        // For the final batch we don't wait; its lock expires via TTL.
       } catch (error) {
+        // The transaction did not land, so its inputs are still unspent — release the
+        // lock immediately so they can be retried by this or another request.
+        releaseBatch();
         partialError =
           error instanceof Error ? error.message : "Unknown error during batch consolidation";
         this.logger.error(`Batch ${batchNum + 1} failed: ${partialError}`);

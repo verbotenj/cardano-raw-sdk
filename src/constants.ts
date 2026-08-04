@@ -21,8 +21,25 @@ export enum CardanoConstants {
   /**
    * TTL for in-memory UTxO locks (ms). Locks expire automatically to prevent
    * permanent blocking if a request crashes before calling release().
+   *
+   * INVARIANT: must be >= TX_CONFIRM_TIMEOUT_MS. Batched consolidation holds a
+   * lock while waiting up to TX_CONFIRM_TIMEOUT_MS for a spend to settle; if the
+   * lock expired sooner, the submitted-but-unsettled inputs could be re-selected by
+   * a concurrent request, reopening the double-spend window the lock exists to close.
    */
-  UTXO_LOCK_TTL_MS = 120_000,
+  UTXO_LOCK_TTL_MS = 240_000,
+  /**
+   * Polling interval (ms) when waiting for a submitted transaction's inputs to be
+   * observed as spent on-chain (used by batched consolidation between batches).
+   */
+  TX_CONFIRM_POLL_INTERVAL_MS = 6_000,
+  /**
+   * Maximum time (ms) to wait for a submitted transaction's inputs to be spent
+   * on-chain before giving up. Cardano settles within a few ~20s blocks; this
+   * bound tolerates indexer lag without blocking indefinitely. Keep this <=
+   * UTXO_LOCK_TTL_MS (see the invariant above).
+   */
+  TX_CONFIRM_TIMEOUT_MS = 180_000,
   /**
    * Maximum number of UTxO inputs per transaction.
    * Cardano's 16KB transaction size limit allows ~100–150 inputs in practice.
@@ -30,6 +47,15 @@ export enum CardanoConstants {
    * address to make future transactions exceed the size limit.
    */
   MAX_TX_INPUTS = 100,
+  /**
+   * Maximum serialized size (bytes) of a single output's Value (the coin + multi-asset
+   * bundle), per the Cardano `maxValueSize` protocol parameter (mainnet: 5000 bytes).
+   * An output whose token bundle exceeds this is rejected by the node, so it must be
+   * caught locally before consuming a Fireblocks signing operation.
+   * NOTE: this is a protocol parameter — replace with the dynamic value once the
+   * parameter endpoint (audit finding H-04) is available.
+   */
+  MAX_VALUE_SIZE = 5000,
   /**
    * Base minimum lovelace for any UTxO (Cardano protocol parameter).
    * Minimum ADA required for ADA-only or single-policy UTxOs.

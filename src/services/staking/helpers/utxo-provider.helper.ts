@@ -5,8 +5,8 @@
 
 import {
   Logger,
-  findSuitableUtxo,
-  UtxoForStaking,
+  selectPureAdaUtxos,
+  sumPureAdaLovelace,
   formatWithDecimals,
   utxoLocks,
   filterSpendableUtxos,
@@ -33,36 +33,57 @@ export class UtxoProvider implements IUtxoProvider {
   ): Promise<AddressWithUtxo> {
     const addresses = await this.getVaultAddresses(vaultAccountId);
 
+    // Track the largest single-address pure-ADA balance seen, to produce an actionable
+    // error when funds exist but are fragmented across addresses.
+    let bestPureAdaOnAnyAddress = 0;
+
     for (const addressObj of addresses) {
       if (addressObj.addressFormat !== "BASE" || !addressObj.address) {
         continue;
       }
 
-      const utxo = await this.findUtxoForAddress(addressObj.address, minAmount);
+      const utxosResponse = await this.iagonApiService.getUtxosByAddress(addressObj.address);
+      const data = utxosResponse.data ?? [];
 
-      if (utxo) {
-        // Atomic acquisition: a concurrent operation may have locked
-        // this UTxO between the availability check and this point.
-        const release = utxoLocks.tryLockOne(utxo.txHash, utxo.indexInTx);
+      // Exclude script/datum UTXOs (not spendable with a simple Ed25519 witness) and any
+      // UTXOs currently locked by a concurrent operation, then aggregate pure-ADA UTxOs
+      // from this single address to cover the amount (audit finding S-4).
+      const spendable = filterSpendableUtxos(data, "staking").filter(
+        (u) => !utxoLocks.isLocked(u.transaction_id, u.output_index)
+      );
+
+      const selection = selectPureAdaUtxos(spendable, minAmount);
+      if (selection) {
+        // Atomically lock all selected UTxOs. A concurrent operation may have locked one
+        // between the availability check above and here, so skip the address if so.
+        const release = utxoLocks.tryLock(
+          selection.utxos.map((u) => ({ transaction_id: u.txHash, output_index: u.indexInTx }))
+        );
         if (release === null) {
           this.logger.debug(
-            `UTXO ${utxo.txHash}#${utxo.indexInTx} was locked concurrently, skipping address ${addressObj.address}`
+            `Selected UTxOs on address ${addressObj.address} were locked concurrently, skipping`
           );
           continue;
         }
 
+        this.logger.info(
+          `Selected ${selection.utxos.length} pure-ADA UTxO(s) totaling ` +
+            `${formatWithDecimals(selection.total, 6).value} ADA from address ${addressObj.address}`
+        );
         return {
           address: addressObj.address,
           addressIndex: addressObj.bip44AddressIndex ?? 0,
-          utxo,
+          utxos: selection.utxos,
+          totalAmount: selection.total,
           release,
         };
       }
 
-      this.logger.debug(`No suitable UTXO for address ${addressObj.address}`);
+      bestPureAdaOnAnyAddress = Math.max(bestPureAdaOnAnyAddress, sumPureAdaLovelace(spendable));
+      this.logger.debug(`No sufficient pure-ADA UTxOs on address ${addressObj.address}`);
     }
 
-    throw this.createInsufficientFundsError(vaultAccountId, minAmount);
+    throw this.createInsufficientFundsError(vaultAccountId, minAmount, bestPureAdaOnAnyAddress);
   }
 
   private async getVaultAddresses(vaultAccountId: string) {
@@ -84,38 +105,29 @@ export class UtxoProvider implements IUtxoProvider {
     return addresses;
   }
 
-  private async findUtxoForAddress(
-    address: string,
-    minAmount: number
-  ): Promise<UtxoForStaking | null> {
-    const utxosResponse = await this.iagonApiService.getUtxosByAddress(address);
-
-    if (!utxosResponse.data || utxosResponse.data.length === 0) {
-      return null;
-    }
-
-    // Filter out locked UTXOs (double-spend prevention) and script/datum
-    // UTXOs which cannot be spent with a simple Ed25519 witness.
-    const availableUtxos = filterSpendableUtxos(utxosResponse.data, "staking").filter(
-      (u) => !utxoLocks.isLocked(u.transaction_id, u.output_index)
-    );
-
-    if (availableUtxos.length === 0) {
-      this.logger.debug(`All UTXOs for ${address} are currently locked`);
-      return null;
-    }
-
-    return findSuitableUtxo(availableUtxos, minAmount);
-  }
-
-  private createInsufficientFundsError(vaultAccountId: string, minAmount: number): SdkApiError {
+  private createInsufficientFundsError(
+    vaultAccountId: string,
+    minAmount: number,
+    bestPureAdaOnAnyAddress: number
+  ): SdkApiError {
     const requiredAda = formatWithDecimals(minAmount, 6).value;
+    const availableAda = formatWithDecimals(bestPureAdaOnAnyAddress, 6).value;
+
+    // Distinguish "funds are fragmented across addresses" from "not enough funds at all",
+    // so the consumer can take the right action (consolidate vs. fund) — audit finding S-4.
+    const fragmented = bestPureAdaOnAnyAddress > 0 && bestPureAdaOnAnyAddress < minAmount;
+    const message = fragmented
+      ? `No single address holds enough pure-ADA UTxOs to cover ${requiredAda} ADA. ` +
+        `The largest single-address pure-ADA balance is ${availableAda} ADA. Consolidate your ` +
+        `UTxOs onto one address (or send ${requiredAda} ADA in a single output) and retry.`
+      : `No address with pure-ADA UTxOs totaling at least ${requiredAda} ADA found. ` +
+        `Please send ${requiredAda} ADA (without tokens) to this vault.`;
+
     return new SdkApiError(
-      `No address with pure ADA UTXO of at least ${requiredAda} ADA found. ` +
-        `Please send ${requiredAda} ADA (without tokens) to this vault.`,
+      message,
       400,
-      "INSUFFICIENT_PURE_ADA",
-      { vaultAccountId, requiredAmount: minAmount },
+      fragmented ? "FRAGMENTED_PURE_ADA" : "INSUFFICIENT_PURE_ADA",
+      { vaultAccountId, requiredAmount: minAmount, bestPureAdaOnAnyAddress },
       "staking-service"
     );
   }
