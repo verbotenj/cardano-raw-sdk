@@ -19,15 +19,27 @@ export enum CardanoConstants {
    */
   TX_FEE_MAX_ITERATIONS = 5,
   /**
+   * Maximum time (ms) Fireblocks holds a RAW signing request before it expires it.
+   * This is a hard Fireblocks platform guarantee (30 minutes): a raw signing request
+   * always resolves — success or timeout — within this window, even under a manual /
+   * quorum signing policy. It gives every raw-signing SDK operation a bounded worst case.
+   * (Native ADA transfers are signed by Fireblocks' own transfer flow and never hold an
+   * SDK UTxO lock, so this bound is only relevant to the raw-signing paths.)
+   */
+  FIREBLOCKS_RAW_SIGN_MAX_MS = 1_800_000,
+  /**
    * TTL for in-memory UTxO locks (ms). Locks expire automatically to prevent
    * permanent blocking if a request crashes before calling release().
    *
-   * INVARIANT: must be >= TX_CONFIRM_TIMEOUT_MS. Batched consolidation holds a
-   * lock while waiting up to TX_CONFIRM_TIMEOUT_MS for a spend to settle; if the
-   * lock expired sooner, the submitted-but-unsettled inputs could be re-selected by
-   * a concurrent request, reopening the double-spend window the lock exists to close.
+   * INVARIANT: must be >= FIREBLOCKS_RAW_SIGN_MAX_MS + TX_CONFIRM_TIMEOUT_MS. A raw
+   * operation holds a lock across the whole "sign (<=30 min) -> submit -> confirm
+   * (<=TX_CONFIRM_TIMEOUT_MS)" window; if the lock expired sooner it could be released
+   * mid-signing (manual policies) or mid-confirmation, letting a concurrent request
+   * re-select the same inputs and reopen the double-spend window. Sized to 35 min =
+   * 30 min max signing + 180s confirmation + ~2 min buffer. The only cost is that a
+   * hard process crash holds the affected UTxOs for up to this long before auto-expiry.
    */
-  UTXO_LOCK_TTL_MS = 240_000,
+  UTXO_LOCK_TTL_MS = 2_100_000,
   /**
    * Polling interval (ms) when waiting for a submitted transaction's inputs to be
    * observed as spent on-chain (used by batched consolidation between batches).
@@ -36,8 +48,8 @@ export enum CardanoConstants {
   /**
    * Maximum time (ms) to wait for a submitted transaction's inputs to be spent
    * on-chain before giving up. Cardano settles within a few ~20s blocks; this
-   * bound tolerates indexer lag without blocking indefinitely. Keep this <=
-   * UTXO_LOCK_TTL_MS (see the invariant above).
+   * bound tolerates indexer lag without blocking indefinitely. Keep
+   * UTXO_LOCK_TTL_MS >= FIREBLOCKS_RAW_SIGN_MAX_MS + this value (see the invariant above).
    */
   TX_CONFIRM_TIMEOUT_MS = 180_000,
   /**

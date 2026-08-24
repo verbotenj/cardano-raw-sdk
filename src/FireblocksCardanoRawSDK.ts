@@ -32,6 +32,7 @@ import {
   assertRecipientAddress,
   assertTxSizeWithinLimit,
   filterSpendableUtxos,
+  collectAllPages,
 } from "./utils/index.js";
 
 import {
@@ -559,49 +560,33 @@ export class FireblocksCardanoRawSDK {
     address: string,
     options: { limit?: number; offset?: number; fromSlot?: number }
   ): Promise<{ success: boolean; data?: T[]; last_updated?: LastUpdated }> {
+    // Caller-supplied explicit paging is respected as-is (single page).
     if (options.limit !== undefined) {
       return fetchFn({ address, ...options });
     }
 
-    const PAGE_SIZE = 100;
-    const MAX_PAGES = 1000; // safety bound: 100k transactions per address
-    const aggregated: T[] = [];
+    // Otherwise walk all pages via the shared paginator (audit finding M-14), capturing
+    // last_updated from each page along the way.
     let lastUpdated: LastUpdated | undefined;
-    let offset = options.offset ?? 0;
-
-    for (let page = 0; page < MAX_PAGES; page++) {
-      const response = await fetchFn({
-        address,
-        limit: PAGE_SIZE,
-        offset,
-        fromSlot: options.fromSlot,
-      });
-
-      // A failed page must abort the walk: aggregating the pages so far
-      // and reporting success would silently truncate the history.
-      if (!response.success) {
-        throw new SdkApiError(
-          `History page fetch failed for ${address} at offset ${offset}`,
-          502,
-          "HISTORY_PAGE_FETCH_ERROR",
-          { address, offset, page },
-          "FireblocksCardanoRawSDK"
-        );
+    const aggregated = await collectAllPages<T>(
+      async (offset, limit) => {
+        const response = await fetchFn({ address, limit, offset, fromSlot: options.fromSlot });
+        lastUpdated = response.last_updated ?? lastUpdated;
+        return response;
+      },
+      {
+        startOffset: options.offset ?? 0,
+        onPageFailure: ({ offset, page }) => {
+          throw new SdkApiError(
+            `History page fetch failed for ${address} at offset ${offset}`,
+            502,
+            "HISTORY_PAGE_FETCH_ERROR",
+            { address, offset, page },
+            "FireblocksCardanoRawSDK"
+          );
+        },
       }
-
-      const items = response.data ?? [];
-      aggregated.push(...items);
-      lastUpdated = response.last_updated ?? lastUpdated;
-
-      const hasMore = response.pagination?.hasMore;
-      if (hasMore === false) break;
-      // An empty page cannot advance the offset; stop rather than loop.
-      if (items.length === 0) break;
-      // Without pagination metadata, a short page is the only
-      // end-of-stream signal; with hasMore=true a short page continues.
-      if (hasMore === undefined && items.length < PAGE_SIZE) break;
-      offset += items.length;
-    }
+    );
 
     return { success: true, data: aggregated, last_updated: lastUpdated };
   }
@@ -1928,7 +1913,7 @@ export class FireblocksCardanoRawSDK {
     senderAddress: string,
     utxos: UtxoData[]
   ): Promise<ConsolidateUtxosResult> {
-    // Lock the inputs for the sign+submit window so a concurrent request cannot
+    // Lock the inputs for the sign+submit+confirm window so a concurrent request cannot
     // select the same UTxOs and cause a double-spend attempt.
     const release = utxoLocks.lock(utxos);
     try {
@@ -1960,6 +1945,19 @@ export class FireblocksCardanoRawSDK {
 
       const { lovelace: outputLovelace, tokenPolicies } = this.extractOutputMetadata(outputs[0]);
 
+      // Wait for the spend to settle on-chain before releasing the lock, so a concurrent
+      // request cannot grab the just-spent (but not-yet-settled) inputs and build a doomed
+      // transaction. On timeout, leave the lock to expire via TTL rather than releasing
+      // potentially-unsettled inputs, and report it via partialError (audit finding OC-2).
+      const confirmed = await this.waitForUtxosSpent(senderAddress, utxos);
+      let partialError: string | undefined;
+      if (confirmed) {
+        release();
+      } else {
+        partialError = `Consolidation ${txHash} submitted but its inputs were not confirmed spent on-chain within ${CardanoConstants.TX_CONFIRM_TIMEOUT_MS}ms; the UTxO lock will expire via TTL`;
+        this.logger.warn(partialError);
+      }
+
       return {
         txHash,
         address: senderAddress,
@@ -1967,11 +1965,13 @@ export class FireblocksCardanoRawSDK {
         lovelace: outputLovelace,
         fee: { lovelace: fee.toString(), ada: feeFormatted.value },
         tokenPolicies,
+        ...(partialError ? { partialError } : {}),
       };
     } catch (error) {
-      this.logAndRethrow("Consolidation", error);
-    } finally {
+      // Build/sign/submit failed: the transaction did not land, so its inputs are still
+      // unspent — release the lock immediately so they can be retried.
       release();
+      this.logAndRethrow("Consolidation", error);
     }
   }
 
@@ -1993,14 +1993,28 @@ export class FireblocksCardanoRawSDK {
     const deadline = Date.now() + timeoutMs;
 
     while (Date.now() < deadline) {
-      const current = await fetchUtxos(this.iagonApiService, address);
+      let current: UtxoData[];
+      try {
+        current = await fetchUtxos(this.iagonApiService, address);
+      } catch (error) {
+        // `fetchUtxos` throws on a transient query/API failure. That failure is about
+        // *reading* the address, not the submitted transaction, so it must NOT abort the
+        // consolidation or release the batch's lock. Treat it as inconclusive and keep
+        // polling until the deadline.
+        this.logger.debug(
+          `waitForUtxosSpent: transient fetch error for ${address}, will retry: ${
+            error instanceof Error ? error.message : String(error)
+          }`
+        );
+        await new Promise((r) => setTimeout(r, pollIntervalMs));
+        continue;
+      }
 
-      // `fetchUtxos` swallows API errors and returns [] on failure. An empty result is
-      // therefore treated as inconclusive, NOT as "all inputs spent": a successful
-      // consolidation always leaves its own output UTxO at this address, so a genuinely
-      // empty set never occurs right after one. This prevents a transient indexer error
-      // from being mistaken for a confirmed spend (which would release the lock early and
-      // let the next batch re-select the still-unsettled inputs → double-spend attempt).
+      // An empty result is treated as inconclusive, NOT as "all inputs spent": a
+      // successful consolidation always leaves its own output UTxO at this address, so a
+      // genuinely empty set right after one means the indexer has not caught up yet. This
+      // avoids mistaking indexer lag for a confirmed spend (which would release the lock
+      // early and let the next batch re-select still-unsettled inputs → double-spend).
       if (current.length > 0) {
         const stillPresent = current.some((u) =>
           spentKeys.has(`${u.transaction_id}#${u.output_index}`)
@@ -2114,11 +2128,11 @@ export class FireblocksCardanoRawSDK {
             releaseBatch();
           } else {
             // Submission succeeded but the spend has not settled within the timeout.
-            // Leave the inputs locked (the TTL will expire them) and stop, rather than
-            // risk selecting them again and producing a spurious partial error.
-            this.logger.warn(
-              `Batch ${batchNum + 1} inputs not confirmed spent within timeout; stopping batched consolidation`
-            );
+            // Leave the inputs locked (the TTL will expire them) and stop. Record a
+            // partialError so the caller knows consolidation stopped early and unconfirmed,
+            // rather than treating the truncated result as a clean success.
+            partialError = `Batch ${batchNum + 1} submitted (tx ${txHash}) but its inputs were not confirmed spent on-chain within ${CardanoConstants.TX_CONFIRM_TIMEOUT_MS}ms; stopping batched consolidation`;
+            this.logger.warn(partialError);
             break;
           }
         }

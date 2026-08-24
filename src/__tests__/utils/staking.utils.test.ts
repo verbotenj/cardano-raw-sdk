@@ -7,8 +7,13 @@ import {
   buildDRepRegistrationCertificate,
   toCoinBigInt,
   drepActionToDRepInfo,
+  selectPureAdaUtxos,
+  sumPureAdaLovelace,
+  assertFeeCoversSize,
+  assertOutputMeetsMinUtxo,
 } from '../../utils/staking.utils.js';
-import { Networks, DRepAction, DRepKind } from '../../types/index.js';
+import { Networks, DRepAction, DRepKind, SdkApiError } from '../../types/index.js';
+import { CardanoConstants } from '../../constants.js';
 
 /**
  * Helper: build a syntactically valid Shelley-era preprod base address
@@ -249,5 +254,115 @@ describe('decodeDRepId via drepActionToDRepInfo - M-11 strict CIP-129 header', (
     const info = decode(encodeDrep('drep_script', credential));
     expect(info.kind).toBe(DRepKind.SCRIPT_HASH);
     expect(info.keyHash?.equals(credential)).toBe(true);
+  });
+});
+
+// ── S-4: pure-ADA UTxO aggregation ────────────────────────────────────────────
+const utxo = (id: number, lovelace: number, assets?: Record<string, number>) => ({
+  transaction_id: `${id}`.padStart(64, '0'),
+  output_index: id,
+  value: { lovelace, ...(assets ? { assets } : {}) },
+});
+
+describe('selectPureAdaUtxos', () => {
+  it('aggregates pure-ADA UTxOs largest-first until the amount is covered', () => {
+    const result = selectPureAdaUtxos(
+      [utxo(1, 2_000_000), utxo(2, 5_000_000), utxo(3, 1_000_000)],
+      6_000_000
+    );
+    expect(result).not.toBeNull();
+    // Largest-first: 5 ADA + 2 ADA = 7 ADA >= 6 ADA, in two UTxOs, stops early.
+    expect(result!.utxos).toHaveLength(2);
+    expect(result!.total).toBe(7_000_000);
+    expect(result!.utxos[0].nativeAmount).toBe(5_000_000);
+  });
+
+  it('returns a single UTxO when one already covers the amount', () => {
+    const result = selectPureAdaUtxos([utxo(1, 600_000_000), utxo(2, 1_000_000)], 500_000_000);
+    expect(result!.utxos).toHaveLength(1);
+    expect(result!.total).toBe(600_000_000);
+  });
+
+  it('skips token-bearing UTxOs (only pure ADA is eligible)', () => {
+    const result = selectPureAdaUtxos(
+      [utxo(1, 10_000_000, { 'policy.TOKEN': 5 }), utxo(2, 3_000_000)],
+      2_000_000
+    );
+    expect(result!.utxos).toHaveLength(1);
+    expect(result!.utxos[0].nativeAmount).toBe(3_000_000);
+  });
+
+  it('returns null when pure-ADA UTxOs cannot cover the amount in aggregate', () => {
+    const result = selectPureAdaUtxos([utxo(1, 1_000_000), utxo(2, 1_000_000)], 5_000_000);
+    expect(result).toBeNull();
+  });
+
+  it('returns null rather than exceed MAX_TX_INPUTS', () => {
+    // Many tiny UTxOs that together are huge, but would need > MAX_TX_INPUTS inputs.
+    const many = Array.from({ length: CardanoConstants.MAX_TX_INPUTS + 50 }, (_, i) => utxo(i, 1));
+    const result = selectPureAdaUtxos(many, CardanoConstants.MAX_TX_INPUTS + 50);
+    expect(result).toBeNull();
+  });
+});
+
+describe('sumPureAdaLovelace', () => {
+  it('sums only token-free UTxOs', () => {
+    const total = sumPureAdaLovelace([
+      utxo(1, 2_000_000),
+      utxo(2, 3_000_000, { 'policy.T': 1 }),
+      utxo(3, 4_000_000),
+    ]);
+    expect(total).toBe(6_000_000);
+  });
+
+  it('is zero for an empty or all-token set', () => {
+    expect(sumPureAdaLovelace([])).toBe(0);
+    expect(sumPureAdaLovelace([utxo(1, 9_000_000, { 'p.T': 1 })])).toBe(0);
+  });
+});
+
+// ── S-7: size-aware fee floor + min-UTxO output guard ─────────────────────────
+describe('assertFeeCoversSize', () => {
+  it('returns the computed minimum when the fee covers it', () => {
+    const bodySize = 300;
+    const min =
+      CardanoConstants.MIN_FEE_A * (bodySize + 2 * CardanoConstants.TX_WITNESS_SIZE_BYTES + 10) +
+      CardanoConstants.MIN_FEE_B;
+    // A generous fee passes and the helper returns the floor it computed.
+    expect(assertFeeCoversSize(bodySize, 2, min + 100_000)).toBe(min);
+  });
+
+  it('throws a 400 FeeBelowMinimum when the fee is under the size-aware floor', () => {
+    try {
+      assertFeeCoversSize(300, 2, 1); // 1 lovelace is well below any real floor
+      throw new Error('expected assertFeeCoversSize to throw');
+    } catch (e) {
+      expect(e).toBeInstanceOf(SdkApiError);
+      expect((e as SdkApiError).statusCode).toBe(400);
+      expect((e as SdkApiError).errorType).toBe('FeeBelowMinimum');
+    }
+  });
+});
+
+describe('assertOutputMeetsMinUtxo', () => {
+  it('passes when the change output meets the protocol minimum', () => {
+    expect(() =>
+      assertOutputMeetsMinUtxo(CardanoConstants.MIN_UTXO_BASE_LOVELACE)
+    ).not.toThrow();
+  });
+
+  it('throws a 400 BelowMinimumUtxo for a change output below the minimum', () => {
+    try {
+      assertOutputMeetsMinUtxo(CardanoConstants.MIN_UTXO_BASE_LOVELACE - 1);
+      throw new Error('expected assertOutputMeetsMinUtxo to throw');
+    } catch (e) {
+      expect(e).toBeInstanceOf(SdkApiError);
+      expect((e as SdkApiError).statusCode).toBe(400);
+      expect((e as SdkApiError).errorType).toBe('BelowMinimumUtxo');
+    }
+  });
+
+  it('throws for a zero-value output', () => {
+    expect(() => assertOutputMeetsMinUtxo(0)).toThrow(SdkApiError);
   });
 });

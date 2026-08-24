@@ -10,8 +10,16 @@ import { Logger } from "./logger.js";
 
 const logger = new Logger("utxo-lock");
 
+interface LockEntry {
+  expiry: number;
+  /** Identifies which lock() acquisition currently owns this key. */
+  token: number;
+}
+
 class UtxoLockManager {
-  private readonly locks = new Map<string, number>();
+  private readonly locks = new Map<string, LockEntry>();
+  /** Monotonic counter giving every lock() acquisition a unique ownership token. */
+  private nextToken = 1;
 
   private key(txId: string, index: number): string {
     return `${txId}#${index}`;
@@ -19,9 +27,9 @@ class UtxoLockManager {
 
   isLocked(txId: string, index: number): boolean {
     const k = this.key(txId, index);
-    const expiry = this.locks.get(k);
-    if (expiry === undefined) return false;
-    if (Date.now() > expiry) {
+    const entry = this.locks.get(k);
+    if (entry === undefined) return false;
+    if (Date.now() > entry.expiry) {
       this.locks.delete(k);
       return false;
     }
@@ -34,6 +42,11 @@ class UtxoLockManager {
    *
    * Overwrites existing locks unconditionally; callers that must not
    * take over a live lock use {@link tryLock} instead.
+   *
+   * Each acquisition carries a unique ownership token, and release() only clears keys
+   * this acquisition still owns. So a stale release() — e.g. from an operation whose
+   * lock already expired and was re-acquired by another operation — cannot free the new
+   * owner's lock.
    */
   lock(utxos: ReadonlyArray<{ transaction_id: string; output_index: number }>): () => void {
     const liveCount = utxos.filter((u) => this.isLocked(u.transaction_id, u.output_index)).length;
@@ -43,15 +56,21 @@ class UtxoLockManager {
       );
     }
 
+    const token = this.nextToken++;
     const expiry = Date.now() + CardanoConstants.UTXO_LOCK_TTL_MS;
     const keys = utxos.map((u) => this.key(u.transaction_id, u.output_index));
-    for (const k of keys) this.locks.set(k, expiry);
+    for (const k of keys) this.locks.set(k, { expiry, token });
 
     let released = false;
     return () => {
       if (released) return;
       released = true;
-      for (const k of keys) this.locks.delete(k);
+      for (const k of keys) {
+        const entry = this.locks.get(k);
+        // Only clear the key if we still own it; a newer lock() (after our TTL expiry)
+        // may have re-acquired it and must not be released by us.
+        if (entry && entry.token === token) this.locks.delete(k);
+      }
     };
   }
 

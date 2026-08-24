@@ -33,9 +33,11 @@ export class UtxoProvider implements IUtxoProvider {
   ): Promise<AddressWithUtxo> {
     const addresses = await this.getVaultAddresses(vaultAccountId);
 
-    // Track the largest single-address pure-ADA balance seen, to produce an actionable
-    // error when funds exist but are fragmented across addresses.
+    // Track the largest single-address pure-ADA balance AND the vault-wide total, to
+    // produce an actionable error: fragmentation (vault has enough, just split across
+    // addresses) is a different remedy from genuine shortfall (audit finding S-4).
     let bestPureAdaOnAnyAddress = 0;
+    let totalPureAdaAcrossVault = 0;
 
     for (const addressObj of addresses) {
       if (addressObj.addressFormat !== "BASE" || !addressObj.address) {
@@ -51,6 +53,13 @@ export class UtxoProvider implements IUtxoProvider {
       const spendable = filterSpendableUtxos(data, "staking").filter(
         (u) => !utxoLocks.isLocked(u.transaction_id, u.output_index)
       );
+
+      // Account for this address's spendable pure-ADA up front, so the vault-wide total
+      // (used to distinguish fragmentation from a real shortfall in the error path) stays
+      // accurate even if we select this address but then fail to lock it below.
+      const addressPureAda = sumPureAdaLovelace(spendable);
+      bestPureAdaOnAnyAddress = Math.max(bestPureAdaOnAnyAddress, addressPureAda);
+      totalPureAdaAcrossVault += addressPureAda;
 
       const selection = selectPureAdaUtxos(spendable, minAmount);
       if (selection) {
@@ -79,11 +88,15 @@ export class UtxoProvider implements IUtxoProvider {
         };
       }
 
-      bestPureAdaOnAnyAddress = Math.max(bestPureAdaOnAnyAddress, sumPureAdaLovelace(spendable));
       this.logger.debug(`No sufficient pure-ADA UTxOs on address ${addressObj.address}`);
     }
 
-    throw this.createInsufficientFundsError(vaultAccountId, minAmount, bestPureAdaOnAnyAddress);
+    throw this.createInsufficientFundsError(
+      vaultAccountId,
+      minAmount,
+      bestPureAdaOnAnyAddress,
+      totalPureAdaAcrossVault
+    );
   }
 
   private async getVaultAddresses(vaultAccountId: string) {
@@ -108,26 +121,45 @@ export class UtxoProvider implements IUtxoProvider {
   private createInsufficientFundsError(
     vaultAccountId: string,
     minAmount: number,
-    bestPureAdaOnAnyAddress: number
+    bestPureAdaOnAnyAddress: number,
+    totalPureAdaAcrossVault: number
   ): SdkApiError {
     const requiredAda = formatWithDecimals(minAmount, 6).value;
-    const availableAda = formatWithDecimals(bestPureAdaOnAnyAddress, 6).value;
+    const bestAda = formatWithDecimals(bestPureAdaOnAnyAddress, 6).value;
+    const totalAda = formatWithDecimals(totalPureAdaAcrossVault, 6).value;
 
-    // Distinguish "funds are fragmented across addresses" from "not enough funds at all",
-    // so the consumer can take the right action (consolidate vs. fund) — audit finding S-4.
-    const fragmented = bestPureAdaOnAnyAddress > 0 && bestPureAdaOnAnyAddress < minAmount;
-    const message = fragmented
-      ? `No single address holds enough pure-ADA UTxOs to cover ${requiredAda} ADA. ` +
-        `The largest single-address pure-ADA balance is ${availableAda} ADA. Consolidate your ` +
-        `UTxOs onto one address (or send ${requiredAda} ADA in a single output) and retry.`
-      : `No address with pure-ADA UTxOs totaling at least ${requiredAda} ADA found. ` +
-        `Please send ${requiredAda} ADA (without tokens) to this vault.`;
+    // Three distinct cases, each with a different remedy (audit finding S-4):
+    //  1. Fragmented: the vault holds enough pure ADA in total, but it is split across
+    //     addresses so no single address can cover the amount. Reachable here only when
+    //     no address was selected, i.e. every single-address total < minAmount.
+    //     Remedy: consolidate onto one address.
+    //  2. Insufficient: the whole vault's pure-ADA balance is below the requirement.
+    //     Remedy: fund the vault with more pure ADA. (Do NOT tell them to consolidate —
+    //     consolidating what they have would still not be enough.)
+    //  3. None: no pure-ADA UTxOs at all — a special case of (2), same remedy.
+    const fragmented = totalPureAdaAcrossVault >= minAmount;
 
+    if (fragmented) {
+      return new SdkApiError(
+        `The vault holds enough pure ADA (${totalAda} ADA total) but it is split across ` +
+          `addresses — no single address covers the required ${requiredAda} ADA (largest is ` +
+          `${bestAda} ADA). Consolidate your UTxOs onto one address (or send ${requiredAda} ADA ` +
+          `in a single output) and retry.`,
+        400,
+        "FRAGMENTED_PURE_ADA",
+        { vaultAccountId, requiredAmount: minAmount, bestPureAdaOnAnyAddress, totalPureAdaAcrossVault },
+        "staking-service"
+      );
+    }
+
+    const shortfall = formatWithDecimals(minAmount - totalPureAdaAcrossVault, 6).value;
     return new SdkApiError(
-      message,
+      `Insufficient pure ADA in the vault: ${totalAda} ADA available across all addresses, ` +
+        `but ${requiredAda} ADA is required (short ${shortfall} ADA). Send more ADA (without ` +
+        `tokens) to this vault.`,
       400,
-      fragmented ? "FRAGMENTED_PURE_ADA" : "INSUFFICIENT_PURE_ADA",
-      { vaultAccountId, requiredAmount: minAmount, bestPureAdaOnAnyAddress },
+      "INSUFFICIENT_PURE_ADA",
+      { vaultAccountId, requiredAmount: minAmount, bestPureAdaOnAnyAddress, totalPureAdaAcrossVault },
       "staking-service"
     );
   }

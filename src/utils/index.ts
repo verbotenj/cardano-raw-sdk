@@ -5,6 +5,7 @@ export * from "./fireblocks.js";
 export * from "./general.js";
 export * from "./httpClient.js";
 export * from "./logger.js";
+export * from "./pagination.js";
 export * from "./sanitizer.js";
 export * from "./staking.utils.js";
 export * from "./utxoLock.js";

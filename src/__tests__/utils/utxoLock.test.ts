@@ -1,5 +1,6 @@
 import { describe, it, expect, jest, afterEach } from "@jest/globals";
 import { utxoLocks } from "../../utils/utxoLock.js";
+import { CardanoConstants } from "../../constants.js";
 
 // tryLock provides atomic check-and-acquire semantics: acquiring a
 // UTxO that already holds a live lock fails instead of silently
@@ -57,9 +58,31 @@ describe("UtxoLockManager.tryLock - atomic acquisition", () => {
     nowSpy.mockReturnValue(base);
     track(utxoLocks.tryLockOne(TX_A, 2));
     // Advance past the lock TTL; the stale lock must not block acquisition.
-    nowSpy.mockReturnValue(base + 10 * 60 * 1000);
+    nowSpy.mockReturnValue(base + CardanoConstants.UTXO_LOCK_TTL_MS + 1000);
     const release = track(utxoLocks.tryLockOne(TX_A, 2));
     expect(release).not.toBeNull();
+    nowSpy.mockRestore();
+  });
+
+  it("release only frees keys this acquisition still owns (ownership token)", () => {
+    const nowSpy = jest.spyOn(Date, "now");
+    const base = Date.now();
+    nowSpy.mockReturnValue(base);
+
+    // Acquisition #1 locks the UTxO, then its TTL lapses.
+    const staleRelease = utxoLocks.tryLockOne(TX_A, 3)!;
+    expect(staleRelease).not.toBeNull();
+    nowSpy.mockReturnValue(base + CardanoConstants.UTXO_LOCK_TTL_MS + 1000);
+
+    // Acquisition #2 re-acquires the now-free UTxO.
+    const newRelease = track(utxoLocks.tryLockOne(TX_A, 3));
+    expect(newRelease).not.toBeNull();
+    expect(utxoLocks.isLocked(TX_A, 3)).toBe(true);
+
+    // The stale release from #1 must NOT free #2's lock.
+    staleRelease();
+    expect(utxoLocks.isLocked(TX_A, 3)).toBe(true);
+
     nowSpy.mockRestore();
   });
 });

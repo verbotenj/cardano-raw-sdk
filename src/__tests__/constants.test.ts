@@ -85,18 +85,23 @@ describe('CardanoConstants', () => {
   });
 
   describe('UTxO locking', () => {
-    it('should have a reasonable lock TTL (4 minutes)', () => {
-      expect(CardanoConstants.UTXO_LOCK_TTL_MS).toBe(240_000);
-      expect(CardanoConstants.UTXO_LOCK_TTL_MS).toBe(4 * 60 * 1000);
+    it('should have a lock TTL covering the full raw-signing + confirmation window (35 minutes)', () => {
+      expect(CardanoConstants.UTXO_LOCK_TTL_MS).toBe(2_100_000);
+      expect(CardanoConstants.UTXO_LOCK_TTL_MS).toBe(35 * 60 * 1000);
     });
 
-    it('lock TTL must be >= the on-chain confirmation timeout', () => {
-      // Batched consolidation holds a lock while waiting up to TX_CONFIRM_TIMEOUT_MS for a
-      // spend to settle; if the lock expired sooner, unsettled inputs could be re-selected
-      // by a concurrent request, reopening the double-spend window (see constants.ts).
+    it('lock TTL must be >= max raw signing time + on-chain confirmation timeout', () => {
+      // A raw operation holds its lock across sign (<=FIREBLOCKS_RAW_SIGN_MAX_MS) -> submit
+      // -> confirm (<=TX_CONFIRM_TIMEOUT_MS). If the lock expired sooner it could be released
+      // mid-signing (manual policies) or mid-confirmation, letting a concurrent request
+      // re-select the same inputs and reopen the double-spend window (see constants.ts).
       expect(CardanoConstants.UTXO_LOCK_TTL_MS).toBeGreaterThanOrEqual(
-        CardanoConstants.TX_CONFIRM_TIMEOUT_MS
+        CardanoConstants.FIREBLOCKS_RAW_SIGN_MAX_MS + CardanoConstants.TX_CONFIRM_TIMEOUT_MS
       );
+    });
+
+    it('Fireblocks raw signing max should be the documented 30-minute platform guarantee', () => {
+      expect(CardanoConstants.FIREBLOCKS_RAW_SIGN_MAX_MS).toBe(30 * 60 * 1000);
     });
   });
 
