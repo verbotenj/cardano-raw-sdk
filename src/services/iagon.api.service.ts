@@ -426,6 +426,11 @@ export class IagonApiService {
             "iagon-api"
           );
         },
+        onMaxPages: ({ pagesFetched, rowsCollected }) =>
+          this.logger.warn(
+            `getAllStakeAccountRewards hit the ${pagesFetched}-page cap for ${stakeAddress}; ` +
+              `results truncated at ${rowsCollected} rows`
+          ),
       }
     );
   };
@@ -449,6 +454,11 @@ export class IagonApiService {
             "iagon-api"
           );
         },
+        onMaxPages: ({ pagesFetched, rowsCollected }) =>
+          this.logger.warn(
+            `getAllDelegationHistory hit the ${pagesFetched}-page cap for ${stakeAddress}; ` +
+              `results truncated at ${rowsCollected} rows`
+          ),
       }
     );
   };
@@ -473,6 +483,11 @@ export class IagonApiService {
             "iagon-api"
           );
         },
+        onMaxPages: ({ pagesFetched, rowsCollected }) =>
+          this.logger.warn(
+            `getAllRegistrationHistory hit the ${pagesFetched}-page cap for ${stakeAddress}; ` +
+              `results truncated at ${rowsCollected} rows`
+          ),
       }
     );
   };

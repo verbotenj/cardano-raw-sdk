@@ -111,8 +111,9 @@ describe("collectAllPages", () => {
     expect(offsets).toEqual([500]);
   });
 
-  it("stops at the maxPages safety bound instead of looping forever", async () => {
+  it("stops at the maxPages safety bound and reports truncation via onMaxPages", async () => {
     let calls = 0;
+    const capped: Array<{ pagesFetched: number; rowsCollected: number }> = [];
     const result = await collectAllPages<Row>(
       (offset) => {
         calls++;
@@ -123,9 +124,63 @@ describe("collectAllPages", () => {
           pagination: { hasMore: true },
         });
       },
-      { pageSize: 2, maxPages: 5, onPageFailure: failLoud }
+      {
+        pageSize: 2,
+        maxPages: 5,
+        onPageFailure: failLoud,
+        onMaxPages: (ctx) => capped.push(ctx),
+      }
     );
     expect(calls).toBe(5);
     expect(result).toHaveLength(10);
+    // Truncation must be reported exactly once with the counts.
+    expect(capped).toEqual([{ pagesFetched: 5, rowsCollected: 10 }]);
+  });
+
+  it("does NOT call onMaxPages on normal termination (stream exhausted within the cap)", async () => {
+    let onMaxPagesCalls = 0;
+    const result = await collectAllPages<Row>(
+      (offset) => {
+        if (offset === 0) {
+          return Promise.resolve({ success: true, data: rows(0, 2), pagination: { hasMore: true } });
+        }
+        return Promise.resolve({ success: true, data: rows(2, 1), pagination: { hasMore: false } });
+      },
+      {
+        pageSize: 2,
+        maxPages: 5,
+        onPageFailure: failLoud,
+        onMaxPages: () => {
+          onMaxPagesCalls++;
+        },
+      }
+    );
+    expect(result).toHaveLength(3);
+    expect(onMaxPagesCalls).toBe(0);
+  });
+
+  it("does NOT call onMaxPages when the stream ends exactly on the last allowed page", async () => {
+    // Edge: 3 full pages, and the 3rd (last allowed) page reports hasMore=false. The walk
+    // reaches page index maxPages-1 but terminates normally there — not truncation.
+    let onMaxPagesCalls = 0;
+    const result = await collectAllPages<Row>(
+      (offset) =>
+        Promise.resolve({
+          success: true,
+          data: rows(offset, 2),
+          // offsets 0 and 2 have more; the page at offset 4 (the 3rd) ends the stream.
+          pagination: { hasMore: offset < 4 },
+        }),
+      {
+        pageSize: 2,
+        maxPages: 3,
+        onPageFailure: failLoud,
+        onMaxPages: () => {
+          onMaxPagesCalls++;
+        },
+      }
+    );
+    expect(result).toHaveLength(6);
+    expect(onMaxPagesCalls).toBe(0);
   });
 });

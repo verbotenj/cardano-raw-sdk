@@ -8,7 +8,9 @@
  *  - treats a short page as end-of-stream ONLY when pagination metadata is absent,
  *  - stops on an empty page (cannot advance) and at a hard MAX_PAGES safety bound,
  *  - fails loud: a page reporting `success === false` aborts the walk via `onPageFailure`
- *    rather than silently truncating the aggregated result.
+ *    rather than silently truncating the aggregated result,
+ *  - never truncates silently: if the MAX_PAGES bound is hit while the stream is still
+ *    not exhausted, `onMaxPages` (if supplied) is invoked so the caller can warn.
  *
  * `fetchPage` may also throw (e.g. a network error) — that propagates unchanged, which is
  * likewise fail-loud.
@@ -29,6 +31,12 @@ export interface CollectAllPagesOptions {
   startOffset?: number;
   /** Invoked when a page reports success === false; must throw (fail-loud). */
   onPageFailure: (ctx: { offset: number; page: number }) => never;
+  /**
+   * Invoked when the walk stops at the `maxPages` safety bound while the stream is still
+   * not exhausted (i.e. the result is truncated). Lets the caller warn instead of
+   * silently dropping rows. Not called on normal termination.
+   */
+  onMaxPages?: (ctx: { pagesFetched: number; rowsCollected: number }) => void;
 }
 
 export const collectAllPages = async <T>(
@@ -39,6 +47,7 @@ export const collectAllPages = async <T>(
   const maxPages = options.maxPages ?? PAGINATION_MAX_PAGES;
   let offset = options.startOffset ?? 0;
   const aggregated: T[] = [];
+  let hitCap = false;
 
   for (let page = 0; page < maxPages; page++) {
     const res = await fetchPage(offset, pageSize);
@@ -56,6 +65,12 @@ export const collectAllPages = async <T>(
     // with hasMore === true a short page still continues.
     if (hasMore === undefined && items.length < pageSize) break;
     offset += items.length;
+    // Reached the safety bound with the stream still not exhausted → truncated result.
+    if (page === maxPages - 1) hitCap = true;
+  }
+
+  if (hitCap) {
+    options.onMaxPages?.({ pagesFetched: maxPages, rowsCollected: aggregated.length });
   }
 
   return aggregated;

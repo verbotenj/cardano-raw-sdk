@@ -585,6 +585,11 @@ export class FireblocksCardanoRawSDK {
             "FireblocksCardanoRawSDK"
           );
         },
+        onMaxPages: ({ pagesFetched, rowsCollected }) =>
+          this.logger.warn(
+            `History walk hit the ${pagesFetched}-page cap for ${address}; ` +
+              `results truncated at ${rowsCollected} rows`
+          ),
       }
     );
 
