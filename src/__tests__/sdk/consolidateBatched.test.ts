@@ -35,7 +35,7 @@ interface FakeIagon {
 const makeSdk = (iagon: FakeIagon) => {
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
   const sdk = Object.create(FireblocksCardanoRawSDK.prototype) as any;
-  sdk.logger = { info: jest.fn(), warn: jest.fn(), error: jest.fn() };
+  sdk.logger = { info: jest.fn(), warn: jest.fn(), error: jest.fn(), debug: jest.fn() };
   sdk.iagonApiService = iagon;
   sdk.fetchCurrentTtl = jest.fn(async () => 999_999_999);
   sdk.signTransaction = jest.fn(async () => ({
@@ -57,12 +57,17 @@ describe("consolidateBatched - partial result preservation on fetch failure", ()
     const iagon: FakeIagon = {
       getUtxosByAddress: jest
         .fn()
-        // batch 1 fetch: enough UTxOs to consolidate
+        // batch 1 top fetch: enough UTxOs to consolidate
         .mockImplementationOnce(async () => ({
           success: true,
           data: [makeUtxo(0), makeUtxo(1), makeUtxo(2)],
         }))
-        // batch 2 re-fetch (and any later call): transient API failure
+        // batch 1 confirmation fetch: inputs #0/#1 gone -> confirmed immediately
+        .mockImplementationOnce(async () => ({
+          success: true,
+          data: [makeUtxo(9)],
+        }))
+        // batch 2 top re-fetch (and any later call): transient API failure
         .mockImplementation(async () => {
           throw new SdkApiError("Iagon unavailable", 503, "UTXO_FETCH_ERROR");
         }),
@@ -85,15 +90,20 @@ describe("consolidateBatched - partial result preservation on fetch failure", ()
     const iagon: FakeIagon = {
       getUtxosByAddress: jest
         .fn()
-        // batch 1 fetch: consolidate three UTxOs
+        // batch 1 top fetch: consolidate three UTxOs
         .mockImplementationOnce(async () => ({
           success: true,
           data: [makeUtxo(0), makeUtxo(1), makeUtxo(2)],
         }))
-        // batch 2 re-fetch: one UTxO left, loop ends cleanly
+        // batch 1 confirmation fetch: inputs #0/#1/#2 gone -> confirmed immediately
         .mockImplementationOnce(async () => ({
           success: true,
-          data: [makeUtxo(0)],
+          data: [makeUtxo(9)],
+        }))
+        // batch 2 top re-fetch: one UTxO left, loop ends cleanly
+        .mockImplementationOnce(async () => ({
+          success: true,
+          data: [makeUtxo(9)],
         }))
         // final metadata fetch: transient API failure
         .mockImplementation(async () => {

@@ -103,4 +103,26 @@ describe("UtxoProvider.findAddressWithSuitableUtxo (S-4)", () => {
       errorType: "INSUFFICIENT_PURE_ADA",
     });
   });
+
+  it("reports over-fragmentation (not a contradictory message) when ONE address has enough ADA but across too many UTxOs", async () => {
+    // 300 pure-ADA UTxOs of 1 ADA on a single address = 300 ADA total, but covering 200 ADA
+    // would need 200 inputs (> MAX_TX_INPUTS 100), so selection fails despite sufficiency.
+    const many = Array.from({ length: 300 }, (_, i) => utxo(`u${i}`, 1 * ADA));
+    const provider = makeProvider({ addrE: many });
+
+    let thrown: unknown;
+    try {
+      await provider.findAddressWithSuitableUtxo("vault0", 200 * ADA);
+    } catch (e) {
+      thrown = e;
+    }
+    expect(thrown).toBeInstanceOf(SdkApiError);
+    expect((thrown as SdkApiError).errorType).toBe("FRAGMENTED_PURE_ADA");
+    const msg = (thrown as SdkApiError).message;
+    // Must describe the real cause (too many UTxOs on one address), not the contradictory
+    // "no single address holds enough" wording.
+    expect(msg).toMatch(/too many|more than 100 UTxOs/i);
+    expect(msg.toLowerCase()).toContain("consolidate");
+    expect(msg.toLowerCase()).not.toContain("no single address");
+  });
 });

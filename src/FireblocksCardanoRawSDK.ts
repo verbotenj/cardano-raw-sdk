@@ -2123,25 +2123,25 @@ export class FireblocksCardanoRawSDK {
 
         this.logger.info(`Batch ${batchNum + 1} successful: ${txHash}`);
 
-        // Wait for this batch's inputs to be observed as spent on-chain before
-        // starting the next batch, instead of a fixed delay. This prevents the next
-        // batch from fetching stale UTxOs that were already successfully spent.
-        if (batchNum < maxBatches - 1) {
-          const confirmed = await this.waitForUtxosSpent(senderAddress, batchUtxos);
-          if (confirmed) {
-            // Inputs are gone from the chain; safe to release the lock.
-            releaseBatch();
-          } else {
-            // Submission succeeded but the spend has not settled within the timeout.
-            // Leave the inputs locked (the TTL will expire them) and stop. Record a
-            // partialError so the caller knows consolidation stopped early and unconfirmed,
-            // rather than treating the truncated result as a clean success.
-            partialError = `Batch ${batchNum + 1} submitted (tx ${txHash}) but its inputs were not confirmed spent on-chain within ${CardanoConstants.TX_CONFIRM_TIMEOUT_MS}ms; stopping batched consolidation`;
-            this.logger.warn(partialError);
-            break;
-          }
+        // Always wait for this batch's inputs to be observed as spent on-chain before
+        // continuing, instead of a fixed delay. This prevents the next batch from fetching
+        // stale UTxOs that were already spent, AND ensures the final metadata read below
+        // (lovelace/tokenPolicies) reflects settled state rather than the just-spent inputs
+        // — including on the final batch when maxBatches is exhausted (audit finding OC-2).
+        const confirmed = await this.waitForUtxosSpent(senderAddress, batchUtxos);
+        if (confirmed) {
+          // Inputs are gone from the chain; safe to release the lock.
+          releaseBatch();
+        } else {
+          // Submission succeeded but the spend has not settled within the timeout.
+          // Leave the inputs locked (the TTL will expire them) and stop. Record a
+          // partialError so the caller knows consolidation stopped early and unconfirmed
+          // (and that the final metadata may still include the unsettled inputs), rather
+          // than treating the truncated result as a clean success.
+          partialError = `Batch ${batchNum + 1} submitted (tx ${txHash}) but its inputs were not confirmed spent on-chain within ${CardanoConstants.TX_CONFIRM_TIMEOUT_MS}ms; stopping batched consolidation`;
+          this.logger.warn(partialError);
+          break;
         }
-        // For the final batch we don't wait; its lock expires via TTL.
       } catch (error) {
         // The transaction did not land, so its inputs are still unspent — release the
         // lock immediately so they can be retried by this or another request.
