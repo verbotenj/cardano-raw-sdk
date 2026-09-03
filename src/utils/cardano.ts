@@ -565,10 +565,7 @@ export const submitTransaction = async (
   try {
     const txCbor = Buffer.from(signedTx.to_bytes()).toString("hex");
 
-    logger.info(`=== TRANSACTION CBOR DEBUG ===`);
-    logger.info(`CBOR length: ${txCbor.length} chars (${txCbor.length / 2} bytes)`);
-    logger.info(`CBOR hex (first 200 chars): ${txCbor.substring(0, 200)}`);
-    logger.info(`CBOR hex (full): ${txCbor}`);
+    logger.info(`Submitting signed transaction (${txCbor.length / 2} CBOR bytes)`);
 
     const response = await chainProvider.submitTransfer(txCbor, false);
 

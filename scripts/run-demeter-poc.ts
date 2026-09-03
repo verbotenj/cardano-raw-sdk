@@ -34,6 +34,14 @@ const required = (name: string): string => {
 
 const enabled = (name: string): boolean => process.env[name] === "1";
 
+const transferAmount = (): number => {
+  const value = Number(process.env.LIVE_TRANSFER_LOVELACE || "2000000");
+  if (!Number.isSafeInteger(value) || value < 1_000_000 || value > 5_000_000) {
+    throw new Error("LIVE_TRANSFER_LOVELACE must be an integer between 1000000 and 5000000");
+  }
+  return value;
+};
+
 const parseNetwork = (): Networks => {
   const value = (process.env.CARDANO_NETWORK || "preview").toLowerCase();
   if (value === Networks.MAINNET) return Networks.MAINNET;
@@ -105,7 +113,7 @@ const runMock = async (): Promise<void> => {
   const senderAddress = required("CARDANO_ADDRESS_1");
   const recipientAddress = required("CARDANO_ADDRESS_2");
   const mnemonic = required("CARDANO_MNEMONIC");
-  const lovelaceAmount = Number(process.env.LIVE_TRANSFER_LOVELACE || "2000000");
+  const lovelaceAmount = transferAmount();
 
   const health = await provider.checkHealth();
   if (!health.success) throw new Error("Demeter Blockfrost health check failed");
@@ -208,7 +216,7 @@ const runFireblocks = async (): Promise<void> => {
   try {
     const result = await sdk.transferAda({
       recipientAddress: required("CARDANO_ADDRESS_2"),
-      lovelaceAmount: Number(process.env.LIVE_TRANSFER_LOVELACE || "2000000"),
+      lovelaceAmount: transferAmount(),
     });
     await waitForConfirmation(provider, result.txHash);
     console.log(`Fireblocks/Demeter POC confirmed transaction ${result.txHash}`);
