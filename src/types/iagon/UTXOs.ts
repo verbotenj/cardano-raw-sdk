@@ -11,9 +11,9 @@ export interface UtxoData {
   datum_hash: string | null;
   script_hash: string | null;
   created_at: {
-    slot_no: number;
+    slot_no?: number;
     header_hash: string;
-  };
+  } | undefined;
 }
 
 export interface UtxoIagonResponse {
