@@ -154,10 +154,7 @@ export class DemeterBlockfrostProvider implements CardanoDataProvider {
   }
 
   public async getCurrentSlot(): Promise<number> {
-    const response = await this.request(
-      () => this.client.get("/blocks/latest"),
-      "latest block"
-    );
+    const response = await this.request(() => this.client.get("/blocks/latest"), "latest block");
     return blockSchema.parse(response.data).slot;
   }
 

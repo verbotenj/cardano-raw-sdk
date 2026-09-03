@@ -1,7 +1,9 @@
 import axios from "axios";
 import https from "https";
 import { z } from "zod";
-import { Logger, ErrorHandler, decodeAssetName } from "../utils/index.js";
+import { ErrorHandler } from "../utils/errorHandler.js";
+import { decodeAssetName } from "../utils/general.js";
+import { Logger } from "../utils/logger.js";
 import { iagonBaseUrl } from "../constants.js";
 
 // Zod schemas for critical Iagon responses

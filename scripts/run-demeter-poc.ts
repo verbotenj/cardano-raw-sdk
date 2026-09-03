@@ -109,7 +109,10 @@ const runMock = async (): Promise<void> => {
 
   const health = await provider.checkHealth();
   if (!health.success) throw new Error("Demeter Blockfrost health check failed");
-  const balance = await provider.getBalanceByAddress({ address: senderAddress, groupByPolicy: false });
+  const balance = await provider.getBalanceByAddress({
+    address: senderAddress,
+    groupByPolicy: false,
+  });
   const utxoResult = await fetchAndSelectUtxosForAda({
     chainProvider: provider,
     address: senderAddress,
