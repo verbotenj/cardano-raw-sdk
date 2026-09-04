@@ -1,5 +1,5 @@
 {
-  "name": "cardano-raw-sdk-demeter-poc",
+  "name": "cardano-raw-sdk",
   "version": "0.1.0",
   "main": "dist/index.js",
   "types": "dist/index.d.ts",
@@ -30,7 +30,7 @@
   ],
   "author": "Fireblocks",
   "license": "ISC",
-  "description": "Fireblocks Cardano Raw SDK POC with selectable Demeter Blockfrost support",
+  "description": "Fireblocks Cardano Raw SDK with selectable IAGON and Demeter Blockfrost providers",
   "devDependencies": {
     "@eslint/js": "^10.0.1",
     "@types/express": "^5.0.6",

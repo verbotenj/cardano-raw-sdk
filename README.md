@@ -1,14 +1,13 @@
-# Cardano Raw SDK — Demeter POC
+# Cardano Raw SDK — Demeter-enabled fork
 
-A standalone proof of concept based on Fireblocks' Cardano Raw SDK. It preserves the
-existing IAGON integration and adds a selectable Demeter-hosted Blockfrost provider
-for Preview balance queries, UTxO selection, raw ADA transaction submission, and
-confirmation.
+This fork of Fireblocks' Cardano Raw SDK preserves the existing IAGON integration
+and adds a selectable Demeter-hosted Blockfrost provider for Preview balance
+queries, UTxO selection, raw ADA transaction submission, and confirmation.
 
-## Demeter POC quick start
+## Demeter development runner
 
-The POC does not depend on Phantom. Its initial `.env.development` is copied locally
-from the Cardano wallet POC and remains ignored by Git.
+The included development runner does not depend on Phantom. Local environment files
+remain ignored by Git.
 
 1. Add `DEMETER_API_KEY` to `.env.development` and set `RUN_LIVE_DEMETER=1`.
 2. Run `npm run poc:mock` to query Preview, build a 2 ADA transaction, and verify a
@@ -92,17 +91,16 @@ history, staking, governance, pool, and asset-metadata calls fail with a typed
 
 ```bash
 # Install directly from GitHub
-npm install github:fireblocks/cardano-raw-sdk
+npm install github:verbotenj/cardano-raw-sdk
 
 # Or install a specific branch/tag
-npm install github:fireblocks/cardano-raw-sdk#main
-npm install github:fireblocks/cardano-raw-sdk#v1.0.0
+npm install github:verbotenj/cardano-raw-sdk#main
 ```
 
 **Or clone for development**:
 
 ```bash
-git clone https://github.com/fireblocks/cardano-raw-sdk.git
+git clone https://github.com/verbotenj/cardano-raw-sdk.git
 cd cardano-raw-sdk
 npm install
 npm run build
