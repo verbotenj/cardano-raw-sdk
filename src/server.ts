@@ -122,7 +122,7 @@ const startServer = () => {
   // Get and validate network from environment variable
   const network = validateNetwork(process.env.CARDANO_NETWORK);
 
-  // Initialize SDK Manager with pool configuration
+  // Initialize SDK Manager with pool configuration and the SDK factory used for each vault.
   const sdkManager = new SdkManager(
     baseConfig,
     network,
@@ -133,8 +133,6 @@ const startServer = () => {
       connectionTimeoutMs: parseInt(process.env.POOL_CONNECTION_TIMEOUT_MS || "30000"),
       retryAttempts: parseInt(process.env.POOL_RETRY_ATTEMPTS || "3"),
     },
-
-    // SDK factory function to create FireblocksCardanoRawSDK instances
     async (vaultAccountId: string, fireblocksConfig: ConfigurationOptions, network: Networks) =>
       FireblocksCardanoRawSDK.createInstance({
         fireblocksConfig,

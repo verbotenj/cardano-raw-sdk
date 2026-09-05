@@ -47,8 +47,10 @@ checks provider capabilities before invoking an extended operation.</p>
 <pre><code class="bash"><span class="hl-1">git</span><span class="hl-0"> </span><span class="hl-2">clone</span><span class="hl-0"> </span><span class="hl-2">https://github.com/verbotenj/cardano-raw-sdk.git</span><br/><span class="hl-1">cd</span><span class="hl-0"> </span><span class="hl-2">cardano-raw-sdk</span><br/><span class="hl-1">npm</span><span class="hl-0"> </span><span class="hl-2">ci</span><br/><span class="hl-1">npm</span><span class="hl-0"> </span><span class="hl-2">run</span><span class="hl-0"> </span><span class="hl-2">quality</span>
 </code><button type="button">Copy</button></pre>
 
-<p>This fork is not published to npm. An application can pin an audited commit:</p>
-<pre><code class="json"><span class="hl-0">{</span><br/><span class="hl-0">  </span><span class="hl-3">&quot;dependencies&quot;</span><span class="hl-0">: {</span><br/><span class="hl-0">    </span><span class="hl-3">&quot;cardano-raw-sdk&quot;</span><span class="hl-0">: </span><span class="hl-2">&quot;git+https://github.com/verbotenj/cardano-raw-sdk.git#COMMIT_SHA&quot;</span><br/><span class="hl-0">  }</span><br/><span class="hl-0">}</span>
+<p>This fork is not published to npm. An application can pin an immutable HTTPS
+archive. The repository tracks compiled <code>dist/</code> files so archive installation
+does not execute build tools:</p>
+<pre><code class="json"><span class="hl-0">{</span><br/><span class="hl-0">  </span><span class="hl-3">&quot;dependencies&quot;</span><span class="hl-0">: {</span><br/><span class="hl-0">    </span><span class="hl-3">&quot;cardano-raw-sdk&quot;</span><span class="hl-0">: </span><span class="hl-2">&quot;https://github.com/verbotenj/cardano-raw-sdk/archive/COMMIT_SHA.tar.gz&quot;</span><br/><span class="hl-0">  }</span><br/><span class="hl-0">}</span>
 </code><button type="button">Copy</button></pre>
 
 <p>Import all public values and types from the package root:</p>
@@ -351,8 +353,9 @@ sanitized audit logs.</li>
 <pre><code class="bash"><span class="hl-1">npm</span><span class="hl-0"> </span><span class="hl-2">run</span><span class="hl-0"> </span><span class="hl-2">format:check</span><br/><span class="hl-1">npm</span><span class="hl-0"> </span><span class="hl-2">run</span><span class="hl-0"> </span><span class="hl-2">lint</span><br/><span class="hl-1">npm</span><span class="hl-0"> </span><span class="hl-2">run</span><span class="hl-0"> </span><span class="hl-2">typecheck</span><br/><span class="hl-1">npm</span><span class="hl-0"> </span><span class="hl-2">test</span><span class="hl-0"> </span><span class="hl-6">--</span><span class="hl-0"> </span><span class="hl-6">--runInBand</span><br/><span class="hl-1">npm</span><span class="hl-0"> </span><span class="hl-2">run</span><span class="hl-0"> </span><span class="hl-2">build</span><br/><span class="hl-1">npm</span><span class="hl-0"> </span><span class="hl-2">run</span><span class="hl-0"> </span><span class="hl-2">audit:prod</span><br/><span class="hl-1">npm</span><span class="hl-0"> </span><span class="hl-2">run</span><span class="hl-0"> </span><span class="hl-2">docs</span>
 </code><button type="button">Copy</button></pre>
 
-<p><code>npm run quality</code> runs every gate except documentation generation. CI repeats
-the same non-destructive checks; it never receives wallet or provider secrets.
+<p><code>npm run quality</code> runs every gate, regenerates <code>dist/</code> and the API reference,
+and fails if either committed artifact is stale. CI repeats the same
+non-destructive checks; it never receives wallet or provider secrets.
 Live workflows are separate, manually dispatched, and environment-scoped.</p>
 <p>The companion <a href="https://github.com/verbotenj/cardano-raw-sdk-demeter-poc">Demeter POC</a>
 contains beginner instructions, sanitized logs, a confirmed Preview receipt,

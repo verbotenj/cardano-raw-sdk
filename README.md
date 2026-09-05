@@ -61,12 +61,14 @@ npm ci
 npm run quality
 ```
 
-This fork is not published to npm. An application can pin an audited commit:
+This fork is not published to npm. An application can pin an immutable HTTPS
+archive. The repository tracks compiled `dist/` files so archive installation
+does not execute build tools:
 
 ```json
 {
   "dependencies": {
-    "cardano-raw-sdk": "git+https://github.com/verbotenj/cardano-raw-sdk.git#COMMIT_SHA"
+    "cardano-raw-sdk": "https://github.com/verbotenj/cardano-raw-sdk/archive/COMMIT_SHA.tar.gz"
   }
 }
 ```
@@ -339,8 +341,9 @@ npm run audit:prod
 npm run docs
 ```
 
-`npm run quality` runs every gate except documentation generation. CI repeats
-the same non-destructive checks; it never receives wallet or provider secrets.
+`npm run quality` runs every gate, regenerates `dist/` and the API reference,
+and fails if either committed artifact is stale. CI repeats the same
+non-destructive checks; it never receives wallet or provider secrets.
 Live workflows are separate, manually dispatched, and environment-scoped.
 
 The companion [Demeter POC](https://github.com/verbotenj/cardano-raw-sdk-demeter-poc)

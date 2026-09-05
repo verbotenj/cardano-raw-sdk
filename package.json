@@ -7,6 +7,7 @@
   "scripts": {
     "prepare": "npm run build",
     "build": "tsc",
+    "build:check": "npm run build && git diff --exit-code -- dist",
     "build:w": "tsc -w",
     "start": "node ./dist/app.js",
     "dev": "concurrently \"npm:build:w\" \"npm:start\"",
@@ -17,7 +18,7 @@
     "lint": "eslint src --ext .ts",
     "test": "jest",
     "audit:prod": "npm audit --omit=dev --audit-level=moderate",
-    "quality": "npm run format:check && npm run lint && npm run typecheck && npm test -- --runInBand && npm run build && npm run audit:prod && npm run docs:verify && npm run docs:check",
+    "quality": "npm run format:check && npm run lint && npm run typecheck && npm test -- --runInBand && npm run build:check && npm run audit:prod && npm run docs:verify && npm run docs:check",
     "poc:mock": "CUSTODY_MODE=mock tsx scripts/run-demeter-poc.ts",
     "poc:fireblocks": "CUSTODY_MODE=fireblocks tsx scripts/run-demeter-poc.ts",
     "docs": "typedoc src",
