@@ -1,4 +1,4 @@
-import { describe, it, expect, jest, beforeEach } from "@jest/globals";
+import { describe, it, expect, jest } from "@jest/globals";
 import { Request, Response } from "express";
 import { BasePath } from "@fireblocks/ts-sdk";
 import { SdkApiError } from "../../types/errors.js";
@@ -21,8 +21,8 @@ const createMockRequest = (overrides: Partial<Request> = {}): Partial<Request> =
  */
 const createMockResponse = (): Partial<Response> => {
   const res: Partial<Response> = {
-    status: jest.fn().mockReturnThis() as any,
-    json: jest.fn().mockReturnThis() as any,
+    status: jest.fn().mockReturnThis() as unknown as Response["status"],
+    json: jest.fn().mockReturnThis() as unknown as Response["json"],
   };
   return res;
 };
@@ -56,12 +56,12 @@ describe("Controller Helper Functions", () => {
     });
 
     it('should handle undefined by defaulting to "US"', () => {
-      const result = mapBasePathToEnvironment(undefined as any);
+      const result = mapBasePathToEnvironment(undefined as unknown as BasePath);
       expect(result).toBe("US");
     });
 
     it('should handle null by defaulting to "US"', () => {
-      const result = mapBasePathToEnvironment(null as any);
+      const result = mapBasePathToEnvironment(null as unknown as BasePath);
       expect(result).toBe("US");
     });
   });
@@ -153,8 +153,6 @@ describe("Controller Error Handling", () => {
   describe("handleError with generic Error", () => {
     it("should format generic Error response", () => {
       const res = createMockResponse();
-      const error = new Error("Network timeout");
-
       (res.status as jest.Mock)(500);
       (res.json as jest.Mock)({
         success: false,
@@ -170,8 +168,6 @@ describe("Controller Error Handling", () => {
 
     it("should handle non-Error objects", () => {
       const res = createMockResponse();
-      const error = "string error";
-
       (res.status as jest.Mock)(500);
       (res.json as jest.Mock)({
         success: false,
@@ -187,15 +183,13 @@ describe("Controller Error Handling", () => {
 
     it("should not leak error details for generic errors", () => {
       const res = createMockResponse();
-      const error = new Error("Internal database connection failed");
-
       (res.status as jest.Mock)(500);
       (res.json as jest.Mock)({
         success: false,
         error: "Something went wrong", // Generic message, not actual error
       });
 
-      const jsonCall = (res.json as jest.Mock).mock.calls[0][0] as any;
+      const jsonCall = (res.json as jest.Mock).mock.calls[0][0] as Record<string, unknown>;
       expect(jsonCall.error).toBe("Something went wrong");
       expect(jsonCall.error).not.toContain("database");
     });
@@ -209,7 +203,7 @@ describe("Request Parameter Parsing", () => {
         params: { vaultAccountId: "123" },
       });
 
-      const { vaultAccountId } = req.params as any;
+      const { vaultAccountId } = req.params as Record<string, string>;
       expect(vaultAccountId).toBe("123");
     });
 
@@ -268,7 +262,7 @@ describe("Request Parameter Parsing", () => {
         },
       });
 
-      const vaultAccountId = (req.params as any).vaultAccountId;
+      const vaultAccountId = (req.params as Record<string, string>).vaultAccountId;
       const index = req.query?.index ? parseInt(req.query.index as string, 10) : 0;
       const limit = req.query?.limit ? Number(req.query.limit) : undefined;
       const offset = req.query?.offset ? Number(req.query.offset) : undefined;
@@ -343,7 +337,7 @@ describe("Response Format Consistency", () => {
     });
 
     expect(res.status).toHaveBeenCalledWith(400);
-    const jsonCall = (res.json as jest.Mock).mock.calls[0][0] as any;
+    const jsonCall = (res.json as jest.Mock).mock.calls[0][0] as Record<string, unknown>;
     expect(jsonCall.success).toBe(false);
     expect(jsonCall).toHaveProperty("error");
   });

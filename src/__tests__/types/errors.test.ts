@@ -199,7 +199,7 @@ describe("SdkApiError", () => {
       );
 
       expect(error.errorType).toBe("InsufficientBalance");
-      expect((error.errorInfo as any).required).toBe(5_000_000);
+      expect((error.errorInfo as { required: number }).required).toBe(5_000_000);
     });
 
     it("should create unsupported operation error", () => {
@@ -225,7 +225,7 @@ describe("SdkApiError", () => {
       );
 
       expect(error.errorType).toBe("BelowMinimumUtxo");
-      expect((error.errorInfo as any).minimum).toBe(1_000_000);
+      expect((error.errorInfo as { minimum: number }).minimum).toBe(1_000_000);
     });
 
     it("should create server error without extra details", () => {
