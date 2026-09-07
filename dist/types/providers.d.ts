@@ -3,6 +3,18 @@ import { HealthStatusResponse, getBalanceByAddressOpts } from "./iagon/general.j
 import { TransactionDetailsResponse, TransferResponse } from "./iagon/transactions.js";
 import { UtxoIagonResponse } from "./iagon/UTXOs.js";
 export type ChainProviderKind = "iagon" | "demeter";
+/** Fresh, network-bound parameters for the ordinary key-witness transfer builders. */
+export interface ProtocolParameterSnapshot {
+    networkMagic: number;
+    epoch: number;
+    fetchedAt: number;
+    minFeeA: number;
+    minFeeB: number;
+    coinsPerUtxoByte: number;
+    maxTxSize: number;
+    keyDeposit: number;
+    poolDeposit: number;
+}
 export declare enum ChainProviderCapability {
     CORE = "core",
     IAGON_COMPATIBILITY = "iagon-compatibility",
@@ -27,8 +39,16 @@ export interface CardanoDataProvider {
     /** Optional authoritative network identity, when exposed by the provider. */
     getNetworkMagic?(): Promise<number>;
     getCurrentSlot(): Promise<number>;
+    getChainTip?(): Promise<{
+        slot: number;
+        height: number;
+        time: number;
+        hash: string;
+    }>;
     submitTransfer(tx: string, skipValidation?: boolean): Promise<TransferResponse>;
     getTransactionDetails(hash: string): Promise<TransactionDetailsResponse | null>;
+    getFullTransactionDetails?(hash: string): Promise<TransactionDetailsResponse | null>;
+    getProtocolParameters?(): Promise<ProtocolParameterSnapshot>;
 }
 export type ChainProviderConfig = {
     type: "iagon";
@@ -41,6 +61,7 @@ export type ChainProviderConfig = {
     apiKey: string;
     maxRetries?: number;
     pageSize?: number;
+    maxPages?: number;
 };
 export declare class ProviderCapabilityError extends Error {
     readonly provider: ChainProviderKind;

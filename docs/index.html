@@ -42,6 +42,26 @@ the already-signed transaction. Cardano is the final settlement record.</p>
 <p>The shared core contract covers provider health, address balance, UTxOs,
 current slot, binary transaction submission, and confirmation by hash. The SDK
 checks provider capabilities before invoking an extended operation.</p>
+<h3 id="verified-transfer-boundary-checks" class="tsd-anchor-link">Verified transfer-boundary checks<a href="#verified-transfer-boundary-checks" aria-label="Permalink" class="tsd-anchor-icon"><svg viewBox="0 0 24 24" aria-hidden="true"><use href="assets/icons.svg#icon-anchor"></use></svg></a></h3>
+<p>Demeter wallet scans are bounded, reject duplicate outputs and malformed asset
+units, and fail if a later page disappears. Authenticated requests do not follow
+redirects. Transient reads have bounded retries; transaction POSTs are not blindly
+retried. The shared submission helper checks the returned hash against the local
+body hash. An ambiguous submission is reconciled only if that exact hash is
+already visible on-chain; otherwise it reports an unknown outcome.</p>
+<p><code>getTransactionDetails()</code> remains a lightweight polling lookup (<code>utxosComplete: false</code> for Demeter). <code>getFullTransactionDetails()</code> additionally fetches actual
+inputs/outputs, preserving reference/collateral flags and failing on unavailable
+UTxO data. It is a separate optional provider operation, not general history support.</p>
+<p>Demeter SDK ADA, CNT, multi-token and consolidation paths now fetch a fresh
+network-bound protocol snapshot for each build. Fees, output-byte cost and maximum
+transaction size use that snapshot. Direct builder callers must pass
+<code>protocolParameters</code> to opt in; omission retains legacy IAGON constants. Snapshots
+expire after five minutes. Fee sizing still conservatively estimates key-witness
+overhead; this is not a Plutus execution-cost estimator. Staking/governance builders
+and the legacy standalone <code>calculateTransactionFee()</code> utility are not migrated.</p>
+<p>Local regressions live in <code>src/__tests__/services/demeter-safety.test.ts</code> and
+<code>src/__tests__/utils/transfer-verification.test.ts</code>. Live Preview acceptance logs
+are maintained in the companion POC's <code>proofs/qa-compatibility/</code> directory.</p>
 <h2 id="installation" class="tsd-anchor-link">Installation<a href="#installation" aria-label="Permalink" class="tsd-anchor-icon"><svg viewBox="0 0 24 24" aria-hidden="true"><use href="assets/icons.svg#icon-anchor"></use></svg></a></h2>
 <p>Node.js 20 or newer is required.</p>
 <pre><code class="bash"><span class="hl-1">git</span><span class="hl-0"> </span><span class="hl-2">clone</span><span class="hl-0"> </span><span class="hl-2">https://github.com/verbotenj/cardano-raw-sdk.git</span><br/><span class="hl-1">cd</span><span class="hl-0"> </span><span class="hl-2">cardano-raw-sdk</span><br/><span class="hl-1">npm</span><span class="hl-0"> </span><span class="hl-2">ci</span><br/><span class="hl-1">npm</span><span class="hl-0"> </span><span class="hl-2">run</span><span class="hl-0"> </span><span class="hl-2">quality</span>
@@ -391,6 +411,9 @@ a separately reviewed legal change.</p>
 <ul>
 <li><a href="#what-changed-in-this-fork"><span>What changed in this fork</span></a></li>
 <li><a href="#provider-wiring"><span>Provider wiring</span></a></li>
+<li>
+<ul>
+<li><a href="#verified-transfer-boundary-checks"><span>Verified transfer-<wbr/>boundary checks</span></a></li></ul></li>
 <li><a href="#installation"><span>Installation</span></a></li>
 <li><a href="#create-an-sdk-instance"><span>Create an <wbr/>SDK instance</span></a></li>
 <li>

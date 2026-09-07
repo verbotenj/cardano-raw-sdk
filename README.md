@@ -50,6 +50,32 @@ The shared core contract covers provider health, address balance, UTxOs,
 current slot, binary transaction submission, and confirmation by hash. The SDK
 checks provider capabilities before invoking an extended operation.
 
+### Verified transfer-boundary checks
+
+Demeter wallet scans are bounded, reject duplicate outputs and malformed asset
+units, and fail if a later page disappears. Authenticated requests do not follow
+redirects. Transient reads have bounded retries; transaction POSTs are not blindly
+retried. The shared submission helper checks the returned hash against the local
+body hash. An ambiguous submission is reconciled only if that exact hash is
+already visible on-chain; otherwise it reports an unknown outcome.
+
+`getTransactionDetails()` remains a lightweight polling lookup (`utxosComplete:
+false` for Demeter). `getFullTransactionDetails()` additionally fetches actual
+inputs/outputs, preserving reference/collateral flags and failing on unavailable
+UTxO data. It is a separate optional provider operation, not general history support.
+
+Demeter SDK ADA, CNT, multi-token and consolidation paths now fetch a fresh
+network-bound protocol snapshot for each build. Fees, output-byte cost and maximum
+transaction size use that snapshot. Direct builder callers must pass
+`protocolParameters` to opt in; omission retains legacy IAGON constants. Snapshots
+expire after five minutes. Fee sizing still conservatively estimates key-witness
+overhead; this is not a Plutus execution-cost estimator. Staking/governance builders
+and the legacy standalone `calculateTransactionFee()` utility are not migrated.
+
+Local regressions live in `src/__tests__/services/demeter-safety.test.ts` and
+`src/__tests__/utils/transfer-verification.test.ts`. Live Preview acceptance logs
+are maintained in the companion POC's `proofs/qa-compatibility/` directory.
+
 ## Installation
 
 Node.js 20 or newer is required.
