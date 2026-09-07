@@ -1,5 +1,6 @@
 import { AxiosInstance } from "axios";
 import { BalanceResponse, CardanoDataProvider, ChainProviderCapability, GroupedBalanceResponse, HealthStatusResponse, TransactionDetailsResponse, TransferResponse, UtxoIagonResponse, getBalanceByAddressOpts, ProtocolParameterSnapshot } from "../types/index.js";
+import type { ChainQueries } from "../types/chain-queries.js";
 export interface DemeterBlockfrostProviderOptions {
     baseUrl: string;
     apiKey: string;
@@ -11,6 +12,7 @@ export interface DemeterBlockfrostProviderOptions {
 }
 /** Core Cardano provider backed by a Demeter-hosted Blockfrost gateway. */
 export declare class DemeterBlockfrostProvider implements CardanoDataProvider {
+    readonly queries: ChainQueries;
     readonly kind: "demeter";
     readonly capabilities: Set<ChainProviderCapability>;
     private readonly logger;

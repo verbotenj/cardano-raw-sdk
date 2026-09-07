@@ -16,6 +16,8 @@ import {
   ProtocolParameterSnapshot,
 } from "../types/index.js";
 import { Logger } from "../utils/logger.js";
+import { BlockfrostQueries } from "./blockfrost.queries.js";
+import type { ChainQueries } from "../types/chain-queries.js";
 
 const hashSchema = z
   .string()
@@ -81,6 +83,10 @@ export interface DemeterBlockfrostProviderOptions {
 
 /** Core Cardano provider backed by a Demeter-hosted Blockfrost gateway. */
 export class DemeterBlockfrostProvider implements CardanoDataProvider {
+  public readonly queries: ChainQueries = new BlockfrostQueries(async (path, params) => {
+    const response = await this.request(() => this.client.get(path, { params }), "indexed query");
+    return response.data;
+  }, this);
   public readonly kind = "demeter" as const;
   public readonly capabilities = new Set([ChainProviderCapability.CORE]);
 

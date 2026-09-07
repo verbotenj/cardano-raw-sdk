@@ -156,6 +156,12 @@ interface PreparedAdaTransaction {
 }
 
 export class FireblocksCardanoRawSDK {
+  /** Narrow indexed reads. Broad legacy capability flags do not imply these operations, or vice versa. */
+  public getChainQueries() {
+    if (!this.chainProvider.queries)
+      throw new Error(`Provider '${this.chainProvider.kind}' has no indexed-query adapter`);
+    return this.chainProvider.queries;
+  }
   private readonly fireblocksService: FireblocksService;
   private readonly chainProvider: CardanoDataProvider;
   private readonly iagonApiService?: IagonApiService;

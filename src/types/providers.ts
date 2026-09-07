@@ -2,6 +2,7 @@ import { BalanceResponse, GroupedBalanceResponse } from "./iagon/assets.js";
 import { HealthStatusResponse, getBalanceByAddressOpts } from "./iagon/general.js";
 import { TransactionDetailsResponse, TransferResponse } from "./iagon/transactions.js";
 import { UtxoIagonResponse } from "./iagon/UTXOs.js";
+import type { ChainQueries } from "./chain-queries.js";
 
 export type ChainProviderKind = "iagon" | "demeter";
 
@@ -35,6 +36,7 @@ export enum ChainProviderCapability {
  * the Demeter POC intentionally implements only this core contract.
  */
 export interface CardanoDataProvider {
+  readonly queries?: ChainQueries;
   readonly kind: ChainProviderKind;
   readonly capabilities: ReadonlySet<ChainProviderCapability>;
   checkHealth(): Promise<HealthStatusResponse>;

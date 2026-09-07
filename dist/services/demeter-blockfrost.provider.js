@@ -2,6 +2,7 @@ import axios from "axios";
 import { z } from "zod";
 import { ChainProviderCapability, SdkApiError, } from "../types/index.js";
 import { Logger } from "../utils/logger.js";
+import { BlockfrostQueries } from "./blockfrost.queries.js";
 const hashSchema = z
     .string()
     .regex(/^[0-9a-fA-F]{64}$/)
@@ -48,6 +49,10 @@ const transactionHashSchema = z
     .transform((hash) => hash.toLowerCase());
 /** Core Cardano provider backed by a Demeter-hosted Blockfrost gateway. */
 export class DemeterBlockfrostProvider {
+    queries = new BlockfrostQueries(async (path, params) => {
+        const response = await this.request(() => this.client.get(path, { params }), "indexed query");
+        return response.data;
+    }, this);
     kind = "demeter";
     capabilities = new Set([ChainProviderCapability.CORE]);
     logger = new Logger("services:demeter-blockfrost");

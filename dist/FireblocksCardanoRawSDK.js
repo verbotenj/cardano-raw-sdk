@@ -8,6 +8,12 @@ import { blake2b } from "blakejs";
 import crypto from "crypto";
 import { createRemoteJWKSet, compactVerify } from "jose";
 export class FireblocksCardanoRawSDK {
+    /** Narrow indexed reads. Broad legacy capability flags do not imply these operations, or vice versa. */
+    getChainQueries() {
+        if (!this.chainProvider.queries)
+            throw new Error(`Provider '${this.chainProvider.kind}' has no indexed-query adapter`);
+        return this.chainProvider.queries;
+    }
     fireblocksService;
     chainProvider;
     iagonApiService;

@@ -12,6 +12,8 @@ export interface SDKConfig {
     logger: Logger;
 }
 export declare class FireblocksCardanoRawSDK {
+    /** Narrow indexed reads. Broad legacy capability flags do not imply these operations, or vice versa. */
+    getChainQueries(): import("./types/chain-queries.js").ChainQueries;
     private readonly fireblocksService;
     private readonly chainProvider;
     private readonly iagonApiService?;
